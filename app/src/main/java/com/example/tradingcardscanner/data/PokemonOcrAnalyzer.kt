@@ -40,7 +40,7 @@ class PokemonOcrAnalyzer {
 
     private fun findBestCardNumber(lines: List<OcrLine>): CardNumber? {
         return lines.asSequence()
-            .flatMap { line -> cardNumberPattern.findAll(line.text) }
+            .flatMap { line -> cardNumberPattern.findAll(line.text.normalizeNumberOcr()) }
             .mapNotNull { match ->
                 val prefix = match.groupValues[1].trimStart('0').ifBlank { "0" }
                 val total = match.groupValues[2].trimStart('0').ifBlank { "0" }
@@ -66,11 +66,7 @@ class PokemonOcrAnalyzer {
             .firstOrNull()
     }
 
-    private fun confidenceFor(
-        lines: List<OcrLine>,
-        possibleName: String?,
-        cardNumber: CardNumber?
-    ): Int {
+    private fun confidenceFor(lines: List<OcrLine>, possibleName: String?, cardNumber: CardNumber?): Int {
         var score = 0
         if (cardNumber != null) score += 50
         if (possibleName != null) score += 25
@@ -86,6 +82,11 @@ class PokemonOcrAnalyzer {
             .trim()
     }
 
+    private fun String.normalizeNumberOcr(): String {
+        return replace(Regex("""(?i)(?<=\d)[oO](?=\d)"""), "0")
+            .replace(Regex("""(?i)\b[oO](?=\d{2,3}\b)"""), "0")
+    }
+
     private fun String.isLikelyPokemonTitle(): Boolean {
         val normalized = lowercase()
         if (length !in 3..32) return false
@@ -98,16 +99,8 @@ class PokemonOcrAnalyzer {
         return true
     }
 
-    private data class OcrLine(
-        val text: String,
-        val bounds: Rect?
-    )
-
-    private data class CardNumber(
-        val displayValue: String,
-        val prefix: String,
-        val total: String
-    )
+    private data class OcrLine(val text: String, val bounds: Rect?)
+    private data class CardNumber(val displayValue: String, val prefix: String, val total: String)
 
     private companion object {
         const val TITLE_AREA_RATIO = 0.42f
@@ -119,22 +112,9 @@ class PokemonOcrAnalyzer {
             RegexOption.IGNORE_CASE
         )
         val ignoredLineFragments = setOf(
-            "pokemon",
-            "kp",
-            "hp",
-            "stage",
-            "basic",
-            "rang",
-            "entwickelt",
-            "schwaeche",
-            "schwache",
-            "resistenz",
-            "rueckzug",
-            "ruckzug",
-            "illustrator",
-            "nintendo",
-            "game freak",
-            "creatures"
+            "pokemon", "kp", "hp", "stage", "basic", "rang", "entwickelt", "meg de",
+            "phasej", "phase", "schwaeche", "schwache", "resistenz", "rueckzug",
+            "ruckzug", "illustrator", "nintendo", "game freak", "creatures"
         )
     }
 }
