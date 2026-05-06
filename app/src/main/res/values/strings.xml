@@ -13,6 +13,10 @@
     <string name="ocr_init_failed">OCR is unavailable on this device. The app can still open and Test Price remains available.</string>
     <string name="ocr_result_title">OCR recognition</string>
     <string name="raw_ocr_title">Raw OCR text</string>
+    <string name="show_ocr_debug">Show OCR debug</string>
+    <string name="hide_ocr_debug">Hide OCR debug</string>
+    <string name="match_status">Match status</string>
+    <string name="test_price_result">Test Price result</string>
     <string name="card_not_recognized">Card could not be recognized</string>
     <string name="possible_matches_found">Possible matches found</string>
     <string name="no_reliable_match_found">No reliable match found</string>
