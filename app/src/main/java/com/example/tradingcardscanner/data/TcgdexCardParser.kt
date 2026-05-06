@@ -10,12 +10,16 @@ object TcgdexCardParser {
     fun parse(json: String): CardDetails {
         val root = JSONObject(json)
         val set = root.optJSONObject("set")
+        val cardCount = set?.optJSONObject("cardCount")
         val cardmarket = root.optJSONObject("pricing")?.optJSONObject("cardmarket")
 
         return CardDetails(
+            id = root.optString("id", ""),
             name = root.optString("name", ""),
             setName = set?.optString("name", "").orEmpty(),
             number = root.optString("localId", ""),
+            setOfficialTotal = cardCount?.optString("official")?.takeIf { it.isNotBlank() },
+            imageUrl = root.optString("image").takeIf { it.isNotBlank() },
             pricing = cardmarket?.let(::parseCardmarketPricing)
         )
     }
