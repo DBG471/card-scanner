@@ -21,6 +21,7 @@
     <string name="matching_cards">Matching against TCGdex...</string>
     <string name="possible_card_name">Possible card name</string>
     <string name="possible_card_number">Possible card number</string>
+    <string name="cleaned_ocr_query">Cleaned OCR query</string>
     <string name="recognition_confidence">Recognition confidence</string>
     <string name="next_tcgdex_matching">OCR text is matched against TCGdex using card number and name.</string>
     <string name="match_set">Set</string>
