@@ -22,6 +22,7 @@
     <string name="recognition_confidence">Erkennungs-Konfidenz</string>
     <string name="next_tcgdex_matching">OCR-Text wird mit Kartennummer und Name gegen TCGdex abgeglichen.</string>
     <string name="match_set">Set</string>
+    <string name="match_rarity">Seltenheit</string>
     <string name="match_confidence">Konfidenz</string>
     <string name="label_condition">Zustand</string>
     <string name="label_source">Preisquelle</string>
@@ -30,6 +31,7 @@
     <string name="source_psa">PSA</string>
     <string name="source_pricecharting">PriceCharting</string>
     <string name="price_idle">Tippe auf Testpreis, um die TCGdex-Beispielkarte zu laden.</string>
+    <string name="price_waiting_match">Cardmarket-Preise erscheinen nach einem starken OCR-Treffer.</string>
     <string name="price_loading">Kartenpreis wird geladen...</string>
     <string name="price_error">Preisdaten konnten nicht geladen werden.</string>
     <string name="no_pricing_data">Keine Preisdaten gefunden</string>
