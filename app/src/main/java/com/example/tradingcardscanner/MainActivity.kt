@@ -3,6 +3,7 @@ package com.example.tradingcardscanner
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -10,6 +11,7 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Spinner
@@ -19,7 +21,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.example.tradingcardscanner.data.CardImageAnalysis
 import com.example.tradingcardscanner.data.OcrCardCandidate
+import com.example.tradingcardscanner.data.PokemonCardImagePreprocessor
 import com.example.tradingcardscanner.data.PokemonOcrAnalyzer
 import com.example.tradingcardscanner.data.TcgdexCardMatcher
 import com.example.tradingcardscanner.data.TcgdexPricingSource
@@ -48,29 +52,44 @@ class MainActivity : ComponentActivity() {
     private lateinit var rawOcrTextView: TextView
     private lateinit var priceTextView: TextView
     private lateinit var testPriceButton: Button
+    private lateinit var debugOverlayToggle: CheckBox
+    private lateinit var debugOverlayView: DebugOverlayView
 
     private val pricingSource = TcgdexPricingSource()
     private val tcgdexCardMatcher = TcgdexCardMatcher()
     private val conditionPriceAdjuster = ConditionPriceAdjuster()
+    private val cardImagePreprocessor = PokemonCardImagePreprocessor()
     private val pokemonOcrAnalyzer = PokemonOcrAnalyzer()
     private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private var pendingPhotoUri: Uri? = null
 
-    private val requestCameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) openCamera() else Toast.makeText(this, R.string.camera_permission_needed, Toast.LENGTH_SHORT).show()
+    private val requestCameraPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            openCamera()
+        } else {
+            Toast.makeText(this, R.string.camera_permission_needed, Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private val takePicture = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success) pendingPhotoUri?.let { uri ->
-            cardImageView.setImageURI(uri)
-            imagePlaceholderText.visibility = View.GONE
-            runOcr(uri)
+    private val takePicture = registerForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            pendingPhotoUri?.let { uri ->
+                cardImageView.setImageURI(uri)
+                imagePlaceholderText.visibility = View.GONE
+                debugOverlayView.setAnalysis(null)
+                runOcr(uri)
+            }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
         cardImageView = findViewById(R.id.cardImageView)
         imagePlaceholderText = findViewById(R.id.imagePlaceholderText)
         conditionSpinner = findViewById(R.id.conditionSpinner)
@@ -80,8 +99,18 @@ class MainActivity : ComponentActivity() {
         rawOcrTextView = findViewById(R.id.rawOcrTextView)
         priceTextView = findViewById(R.id.priceTextView)
         testPriceButton = findViewById(R.id.testPriceButton)
-        findViewById<Button>(R.id.scanButton).setOnClickListener { startCardCapture() }
-        testPriceButton.setOnClickListener { loadTestPrice() }
+        debugOverlayToggle = findViewById(R.id.debugOverlayToggle)
+        debugOverlayView = findViewById(R.id.debugOverlayView)
+
+        findViewById<Button>(R.id.scanButton).setOnClickListener {
+            startCardCapture()
+        }
+        testPriceButton.setOnClickListener {
+            loadTestPrice()
+        }
+        debugOverlayToggle.setOnCheckedChangeListener { _, checked ->
+            debugOverlayView.visibility = if (checked) View.VISIBLE else View.GONE
+        }
     }
 
     override fun onDestroy() {
@@ -94,7 +123,12 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, R.string.camera_unavailable, Toast.LENGTH_SHORT).show()
             return
         }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) openCamera() else requestCameraPermission.launch(Manifest.permission.CAMERA)
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            openCamera()
+        } else {
+            requestCameraPermission.launch(Manifest.permission.CAMERA)
+        }
     }
 
     private fun openCamera() {
@@ -106,30 +140,65 @@ class MainActivity : ComponentActivity() {
     private fun createPhotoUri(): Uri {
         val scanDirectory = File(cacheDir, "camera_scans").apply { mkdirs() }
         val imageFile = File.createTempFile("trading-card-", ".jpg", scanDirectory)
-        return FileProvider.getUriForFile(this, "$packageName.fileprovider", imageFile)
+        return FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            imageFile
+        )
     }
 
-    private fun isCameraIntentAvailable(): Boolean = Intent(MediaStore.ACTION_IMAGE_CAPTURE).resolveActivity(packageManager) != null
+    private fun isCameraIntentAvailable(): Boolean {
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        return intent.resolveActivity(packageManager) != null
+    }
 
     private fun runOcr(imageUri: Uri) {
         recognitionTextView.text = getString(R.string.ocr_running)
         matchesContainer.removeAllViews()
         rawOcrTextView.text = getString(R.string.raw_ocr_title)
         priceTextView.text = getString(R.string.price_waiting_match)
-        runCatching { InputImage.fromFilePath(this, imageUri) }
-            .onSuccess { image -> textRecognizer.process(image).addOnSuccessListener(::showOcrResult).addOnFailureListener { showOcrFailure() } }
+        debugOverlayView.setAnalysis(null)
+
+        runCatching {
+            val bitmap = decodeBitmap(imageUri)
+            val analysis = cardImagePreprocessor.prepare(bitmap)
+            cardImageView.setImageBitmap(analysis.croppedBitmap)
+            debugOverlayView.setAnalysis(analysis)
+            InputImage.fromBitmap(analysis.croppedBitmap, 0) to analysis
+        }
+            .onSuccess { (image, analysis) ->
+                textRecognizer.process(image)
+                    .addOnSuccessListener { text -> showOcrResult(text, analysis) }
+                    .addOnFailureListener { showOcrFailure() }
+            }
             .onFailure { showOcrFailure() }
     }
 
-    private fun showOcrResult(text: Text) {
+    private fun decodeBitmap(imageUri: Uri): Bitmap {
+        return contentResolver.openInputStream(imageUri)?.use { stream ->
+            BitmapFactory.decodeStream(stream)
+        } ?: error("Could not decode captured image")
+    }
+
+    private fun showOcrResult(text: Text, analysis: CardImageAnalysis) {
         val rawText = text.text.trim()
-        val candidate = pokemonOcrAnalyzer.analyze(text)
+        val candidate = pokemonOcrAnalyzer.analyze(
+            text = text,
+            imageWidth = analysis.croppedBitmap.width,
+            imageHeight = analysis.croppedBitmap.height
+        )
+
         recognitionTextView.text = formatOcrCandidate(candidate)
         rawOcrTextView.text = buildString {
             appendLine(getString(R.string.raw_ocr_title))
+            appendLine("${getString(R.string.debug_crop)}: ${analysis.cardBoundsInOriginal.flattenToString()}${if (analysis.usedFallbackCrop) " (${getString(R.string.debug_fallback_crop)})" else ""}")
+            appendLine("${getString(R.string.debug_title_region)}: ${analysis.titleRegion.flattenToString()}")
+            appendLine("${getString(R.string.debug_number_region)}: ${analysis.numberRegion.flattenToString()}")
+            candidate.debugNotes.forEach { appendLine(it) }
             appendLine()
             append(if (rawText.isBlank()) getString(R.string.value_unavailable) else rawText)
         }
+
         findTcgdexMatches(candidate)
     }
 
@@ -143,34 +212,57 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun formatOcrCandidate(candidate: OcrCardCandidate): String = buildString {
-        appendLine(getString(R.string.ocr_result_title))
-        appendLine()
-        if (!candidate.isReliable) appendLine(getString(R.string.card_not_recognized))
-        appendLine("${getString(R.string.possible_card_name)}: ${candidate.possibleName ?: getString(R.string.value_unavailable)}")
-        appendLine("${getString(R.string.possible_card_number)}: ${candidate.possibleNumber ?: getString(R.string.value_unavailable)}")
-        appendLine("${getString(R.string.recognition_confidence)}: ${candidate.confidenceScore}%")
-        appendLine()
-        append(getString(R.string.next_tcgdex_matching))
+    private fun formatOcrCandidate(candidate: OcrCardCandidate): String {
+        return buildString {
+            appendLine(getString(R.string.ocr_result_title))
+            appendLine()
+
+            if (!candidate.isReliable) {
+                appendLine(getString(R.string.card_not_recognized))
+            }
+
+            appendLine("${getString(R.string.possible_card_name)}: ${candidate.possibleName ?: getString(R.string.value_unavailable)}")
+            appendLine("${getString(R.string.possible_card_number)}: ${candidate.possibleNumber ?: getString(R.string.value_unavailable)}")
+            appendLine("${getString(R.string.recognition_confidence)}: ${candidate.confidenceScore}%")
+            appendLine()
+            append(getString(R.string.next_tcgdex_matching))
+        }
     }
 
     private fun findTcgdexMatches(candidate: OcrCardCandidate) {
         matchesContainer.removeAllViews()
         if (candidate.possibleName == null && candidate.numberPrefix == null) return
+
         recognitionTextView.append("\n\n${getString(R.string.matching_cards)}")
+        recognitionTextView.append("\n${getString(R.string.match_query)}:\n${tcgdexCardMatcher.debugQueries(candidate)}")
         tcgdexCardMatcher.findMatches(candidate) { result ->
-            runOnUiThread { result.onSuccess(::showMatches).onFailure { showMatches(emptyList()) } }
+            runOnUiThread {
+                result
+                    .onSuccess { matches -> showMatches(matches) }
+                    .onFailure { showMatches(emptyList()) }
+            }
         }
     }
 
     private fun showMatches(matches: List<CardMatch>) {
         matchesContainer.removeAllViews()
         val strongMatch = matches.firstOrNull { it.isStrong }
+
         recognitionTextView.text = buildString {
-            appendLine(if (strongMatch != null) getString(R.string.strong_match_found) else getString(R.string.possible_matches_found))
-            if (matches.isEmpty()) appendLine(getString(R.string.no_possible_matches))
+            appendLine(if (strongMatch != null) getString(R.string.strong_match_found) else getString(R.string.no_reliable_match_found))
+            if (matches.isEmpty()) {
+                appendLine(getString(R.string.no_possible_matches))
+            }
         }.trim()
-        matches.forEach { match -> matchesContainer.addView(createMatchView(match)) }
+
+        if (strongMatch != null) {
+            matches.take(1).forEach { match ->
+                matchesContainer.addView(createMatchView(match))
+            }
+        } else {
+            matchesContainer.addView(debugLowConfidenceView(matches))
+        }
+
         if (strongMatch != null) {
             priceTextView.text = formatCardDetails(strongMatch.card)
         } else if (matches.isNotEmpty()) {
@@ -184,17 +276,20 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             setBackgroundResource(R.drawable.info_panel)
         }
+
         val image = ImageView(this).apply {
             contentDescription = match.card.name
             scaleType = ImageView.ScaleType.CENTER_CROP
             setBackgroundResource(R.drawable.preview_frame)
         }
         row.addView(image, LinearLayout.LayoutParams(dp(86), dp(120)))
+
         val text = TextView(this).apply {
-            this.text = buildString {
+            text = buildString {
                 appendLine(match.card.name)
                 appendLine("${getString(R.string.match_set)}: ${match.card.setName}")
                 appendLine("${getString(R.string.match_rarity)}: ${match.card.rarity ?: getString(R.string.value_unavailable)}")
+                appendLine("${getString(R.string.card_number)}: ${match.card.number}/${match.card.setOfficialTotal ?: "?"}")
                 append("${getString(R.string.match_confidence)}: ${match.confidence}%")
             }
             setTextColor((0xFF18313B).toInt())
@@ -202,9 +297,35 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(12), 0, 0, 0)
         }
         row.addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
         match.card.imageUrl?.let { loadCardImage(it, image) }
+
         return row.apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, dp(10)) }
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            params.setMargins(0, 0, 0, dp(10))
+            layoutParams = params
+        }
+    }
+
+    private fun debugLowConfidenceView(matches: List<CardMatch>): View {
+        return TextView(this).apply {
+            setBackgroundResource(R.drawable.info_panel)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setTextColor((0xFF18313B).toInt())
+            textSize = 13f
+            text = buildString {
+                appendLine(getString(R.string.no_reliable_match_found))
+                appendLine()
+                matches.take(3).forEachIndexed { index, match ->
+                    appendLine("${index + 1}. ${match.card.name} (${match.confidence}%)")
+                    appendLine("${getString(R.string.match_query)}: ${match.queryUsed}")
+                    appendLine("${getString(R.string.match_reason)}: ${match.matchReason}")
+                    appendLine()
+                }
+            }.trim()
         }
     }
 
@@ -213,17 +334,23 @@ class MainActivity : ComponentActivity() {
             runCatching {
                 val resolvedUrl = if (imageUrl.endsWith(".png")) imageUrl else "$imageUrl/high.png"
                 URL(resolvedUrl).openStream().use(BitmapFactory::decodeStream)
-            }.onSuccess { bitmap -> runOnUiThread { imageView.setImageBitmap(bitmap) } }
+            }.onSuccess { bitmap ->
+                runOnUiThread { imageView.setImageBitmap(bitmap) }
+            }
         }.start()
     }
 
     private fun loadTestPrice() {
         testPriceButton.isEnabled = false
         priceTextView.text = getString(R.string.price_loading)
+
         pricingSource.fetchSampleCard { result ->
             runOnUiThread {
                 testPriceButton.isEnabled = true
-                priceTextView.text = result.fold(onSuccess = ::formatCardDetails, onFailure = { getString(R.string.price_error) })
+                priceTextView.text = result.fold(
+                    onSuccess = ::formatCardDetails,
+                    onFailure = { getString(R.string.price_error) }
+                )
             }
         }
     }
@@ -231,38 +358,55 @@ class MainActivity : ComponentActivity() {
     private fun formatCardDetails(card: CardDetails): String {
         val condition = CardCondition.fromSpinnerPosition(conditionSpinner.selectedItemPosition)
         val adjustedPricing = card.pricing?.let { conditionPriceAdjuster.adjust(it, condition) }
+
         return buildString {
             appendLine("${getString(R.string.card_name)}: ${card.name}")
             appendLine("${getString(R.string.set_name)}: ${card.setName}")
             appendLine("${getString(R.string.match_rarity)}: ${card.rarity ?: getString(R.string.value_unavailable)}")
             appendLine("${getString(R.string.card_number)}: ${card.number}")
             appendLine()
-            if (adjustedPricing?.hasAnyPrice == true) append(formatPricing(adjustedPricing)) else append(getString(R.string.no_pricing_data))
+
+            if (adjustedPricing?.hasAnyPrice == true) {
+                append(formatPricing(adjustedPricing))
+            } else {
+                append(getString(R.string.no_pricing_data))
+            }
         }
     }
 
-    private fun formatPricing(pricing: PricingSnapshot): String = buildString {
-        appendLine("${getString(R.string.trend_price)}: ${formatPrice(pricing.trend, pricing.currencyCode)}")
-        appendLine("${getString(R.string.low_price)}: ${formatPrice(pricing.low, pricing.currencyCode)}")
-        appendLine("${getString(R.string.avg30_price)}: ${formatPrice(pricing.average30Days, pricing.currencyCode)}")
-        val holo = pricing.holo
-        if (holo?.hasAnyPrice == true) {
-            appendLine()
-            appendLine(getString(R.string.holo_prices))
-            appendLine("${getString(R.string.trend_price)}: ${formatPrice(holo.trend, pricing.currencyCode)}")
-            appendLine("${getString(R.string.low_price)}: ${formatPrice(holo.low, pricing.currencyCode)}")
-            appendLine("${getString(R.string.avg30_price)}: ${formatPrice(holo.average30Days, pricing.currencyCode)}")
-        }
-    }.trimEnd()
+    private fun formatPricing(pricing: PricingSnapshot): String {
+        return buildString {
+            appendLine("${getString(R.string.trend_price)}: ${formatPrice(pricing.trend, pricing.currencyCode)}")
+            appendLine("${getString(R.string.low_price)}: ${formatPrice(pricing.low, pricing.currencyCode)}")
+            appendLine("${getString(R.string.avg30_price)}: ${formatPrice(pricing.average30Days, pricing.currencyCode)}")
+
+            val holo = pricing.holo
+            if (holo?.hasAnyPrice == true) {
+                appendLine()
+                appendLine(getString(R.string.holo_prices))
+                appendLine("${getString(R.string.trend_price)}: ${formatPrice(holo.trend, pricing.currencyCode)}")
+                appendLine("${getString(R.string.low_price)}: ${formatPrice(holo.low, pricing.currencyCode)}")
+                appendLine("${getString(R.string.avg30_price)}: ${formatPrice(holo.average30Days, pricing.currencyCode)}")
+            }
+        }.trimEnd()
+    }
 
     private fun formatPrice(value: Double?, currencyCode: String): String {
         if (value == null) return getString(R.string.value_unavailable)
-        val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) resources.configuration.locales[0] else {
+
+        val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            resources.configuration.locales[0]
+        } else {
             @Suppress("DEPRECATION")
             resources.configuration.locale ?: Locale.getDefault()
         }
-        return NumberFormat.getCurrencyInstance(locale).apply { currency = Currency.getInstance(currencyCode) }.format(value)
+
+        return NumberFormat.getCurrencyInstance(locale).apply {
+            currency = Currency.getInstance(currencyCode)
+        }.format(value)
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
+    }
 }
