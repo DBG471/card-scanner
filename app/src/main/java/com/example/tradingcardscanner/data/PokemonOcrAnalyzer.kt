@@ -9,6 +9,7 @@ data class OcrCardCandidate(
     val numberPrefix: String?,
     val numberTotal: String?,
     val confidenceScore: Int,
+    val cleanedQuery: String,
     val debugNotes: List<String> = emptyList()
 ) {
     val isReliable: Boolean
@@ -30,6 +31,7 @@ class PokemonOcrAnalyzer {
         val cardNumber = findBestCardNumber(lines, regions)
         val name = findBestName(lines, cardNumber, regions)
         val score = confidenceFor(lines, name, cardNumber)
+        val cleanedQuery = buildCleanedQuery(name, cardNumber)
 
         return OcrCardCandidate(
             possibleName = name,
@@ -37,7 +39,8 @@ class PokemonOcrAnalyzer {
             numberPrefix = cardNumber?.prefix,
             numberTotal = cardNumber?.total,
             confidenceScore = score,
-            debugNotes = buildDebugNotes(regions, name, cardNumber)
+            cleanedQuery = cleanedQuery,
+            debugNotes = buildDebugNotes(regions, name, cardNumber, cleanedQuery)
         )
     }
 
@@ -58,26 +61,34 @@ class PokemonOcrAnalyzer {
     }
 
     private fun findBestName(lines: List<OcrLine>, cardNumber: CardNumber?, regions: OcrRegions): String? {
-        return lines.asSequence()
-            .filter { line -> regions.isInTitle(line) }
-            .map { it.text.cleanupOcrWord() }
-            .filter { it.isLikelyPokemonTitle() }
-            .filterNot { cleaned -> cardNumber?.displayValue?.let { cleaned.contains(it) } == true }
-            .sortedWith(
-                compareByDescending<String> { it.length in 4..18 }
-                    .thenBy { it.split(" ").size }
-                    .thenBy { it.length }
-            )
+        return lines
+            .mapNotNull { line ->
+                val cleaned = line.text.cleanupTitleLine()
+                if (!cleaned.isLikelyPokemonTitle()) return@mapNotNull null
+                if (cardNumber?.displayValue?.let { cleaned.contains(it) } == true) return@mapNotNull null
+                TitleCandidate(
+                    name = cleaned,
+                    score = titleScore(line, cleaned, regions)
+                )
+            }
+            .sortedWith(compareByDescending<TitleCandidate> { it.score }.thenBy { it.name.length })
+            .map { it.name }
             .firstOrNull()
     }
 
     private fun extractNumbers(line: OcrLine): List<CardNumber> {
         val normalized = line.text.normalizeNumberOcr()
         val slashNumbers = cardNumberPattern.findAll(normalized).map { match ->
-            val prefix = "${match.groupValues[1]}${match.groupValues[2]}".uppercase().trimStart('0').ifBlank { "0" }
+            val rawPrefix = "${match.groupValues[1]}${match.groupValues[2]}".uppercase()
+            val prefix = rawPrefix.trimStart('0').ifBlank { "0" }
             val total = match.groupValues[3].trimStart('0').ifBlank { "0" }
+            val displayPrefix = if (rawPrefix.any(Char::isLetter)) {
+                rawPrefix.replace(Regex("""^([A-Z]+)0+(\d+)"""), "$1$2")
+            } else {
+                rawPrefix.filter(Char::isDigit).padStart(3, '0')
+            }
             CardNumber(
-                displayValue = "${match.groupValues[1].uppercase()}${match.groupValues[2].uppercase()}/${match.groupValues[3]}",
+                displayValue = "$displayPrefix/${match.groupValues[3]}",
                 prefix = prefix,
                 total = total,
                 regionRank = 1,
@@ -113,14 +124,22 @@ class PokemonOcrAnalyzer {
         return score.coerceAtMost(100)
     }
 
-    private fun String.cleanupOcrWord(): String {
-        return replace(Regex("""^[^A-Za-z]+|[^A-Za-z]+$"""), "")
+    private fun String.cleanupTitleLine(): String {
+        return normalizeCommonOcrNoise()
+            .replace(cardNumberPattern, " ")
+            .replace(promoPattern, " ")
+            .replace(Regex("""(?i)\b\d{1,3}\s*(HP|KP|PS)\b"""), " ")
+            .replace(Regex("""(?i)\b(HP|KP|PS)\s*\d{1,3}\b"""), " ")
+            .replace(Regex("""(?i)\b(stage|basic|basis|rang|phase|phasej|entwickelt|evolves)\b"""), " ")
+            .replace(Regex("""^[^A-Za-z]+|[^A-Za-z]+$"""), "")
             .replace(Regex("""\s+"""), " ")
             .trim()
     }
 
     private fun String.normalizeNumberOcr(): String {
-        return replace(Regex("""(?i)(?<=\d)[oO](?=\d)"""), "0")
+        return normalizeCommonOcrNoise()
+            .replace(Regex("""(?i)(?<=\d)[oO](?=\d)"""), "0")
+            .replace(Regex("""(?i)\b[oO](?=\d{1,3}\s*/\s*\d{1,3}\b)"""), "0")
             .replace(Regex("""(?i)\b[oO](?=\d{2,3}\b)"""), "0")
             .replace(Regex("""(?i)\bTG\s*([0-9oO]{1,2})\s*/\s*([0-9oO]{1,2})\b""")) {
                 "TG${it.groupValues[1].replace(Regex("(?i)o"), "0")}/${it.groupValues[2].replace(Regex("(?i)o"), "0")}"
@@ -130,34 +149,67 @@ class PokemonOcrAnalyzer {
             }
     }
 
+    private fun String.normalizeCommonOcrNoise(): String {
+        return replace(Regex("""(?i)\bD?MEG\s*DE\b"""), " ")
+            .replace(Regex("""(?i)\bBASIS\b"""), " ")
+            .replace(Regex("""(?i)\bPHASEJ?\b"""), " ")
+            .replace(Regex("""(?i)\b(copyright|illustrator|nintendo|creatures|game\s*freak).*$"""), " ")
+    }
+
     private fun String.isLikelyPokemonTitle(): Boolean {
         val normalized = lowercase()
         if (length !in 3..32) return false
         if (!any(Char::isLetter)) return false
         if (count(Char::isDigit) > 0) return false
         if (contains("/")) return false
+        if (normalized.any { !it.isLetter() && it != ' ' && it != '-' }) return false
         if (ignoredLineFragments.any { normalized.contains(it) }) return false
         if (attackOrRulesPattern.containsMatchIn(this)) return false
         if (split(" ").size > 3) return false
         return true
     }
 
+    private fun titleScore(line: OcrLine, cleaned: String, regions: OcrRegions): Int {
+        val bounds = line.bounds
+        val height = bounds?.height() ?: 0
+        val area = bounds?.let { it.width() * it.height() } ?: 0
+        val centerY = bounds?.centerY() ?: regions.titleBottom
+        val topBonus = when {
+            centerY <= regions.titleBottom -> 90
+            centerY <= regions.looseTitleBottom -> 55
+            else -> 0
+        }
+        val lengthBonus = if (cleaned.length in 4..18) 20 else 0
+        return topBonus + height + (area / 1200) + lengthBonus
+    }
+
+    private fun buildCleanedQuery(name: String?, cardNumber: CardNumber?): String {
+        return listOfNotNull(name, cardNumber?.displayValue).joinToString(" ").ifBlank { "none" }
+    }
+
     private fun buildDebugNotes(
         regions: OcrRegions,
         name: String?,
-        cardNumber: CardNumber?
+        cardNumber: CardNumber?,
+        cleanedQuery: String
     ): List<String> {
         return listOf(
             "title region: top ${regions.titleBottom}px",
             "number region: from ${regions.numberTop}px",
-            "name source: ${name ?: "none"}",
-            "number source: ${cardNumber?.displayValue ?: "none"}"
+            "final parsed Pokemon name: ${name ?: "none"}",
+            "final parsed card number: ${cardNumber?.displayValue ?: "none"}",
+            "cleaned TCGdex query: $cleanedQuery"
         )
     }
 
     private data class OcrLine(
         val text: String,
         val bounds: Rect?
+    )
+
+    private data class TitleCandidate(
+        val name: String,
+        val score: Int
     )
 
     private data class CardNumber(
@@ -174,6 +226,7 @@ class PokemonOcrAnalyzer {
 
     private data class OcrRegions(
         val titleBottom: Int,
+        val looseTitleBottom: Int,
         val numberTop: Int
     ) {
         fun isInTitle(line: OcrLine): Boolean {
@@ -193,6 +246,7 @@ class PokemonOcrAnalyzer {
                     ?: 0
                 return OcrRegions(
                     titleBottom = (height * TITLE_AREA_RATIO).toInt(),
+                    looseTitleBottom = (height * LOOSE_TITLE_AREA_RATIO).toInt(),
                     numberTop = (height * NUMBER_AREA_TOP_RATIO).toInt()
                 )
             }
@@ -201,6 +255,7 @@ class PokemonOcrAnalyzer {
 
     private companion object {
         const val TITLE_AREA_RATIO = 0.24f
+        const val LOOSE_TITLE_AREA_RATIO = 0.46f
         const val NUMBER_AREA_TOP_RATIO = 0.70f
         val cardNumberPattern = Regex("""\b(TG)?0*([A-Z]{0,3}\d{1,3})\s*/\s*0*(\d{1,3})\b""", RegexOption.IGNORE_CASE)
         val promoPattern = Regex("""\bSVP\s*[0-9O]{1,3}\b""", RegexOption.IGNORE_CASE)
