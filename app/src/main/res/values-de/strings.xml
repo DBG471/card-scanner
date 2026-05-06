@@ -7,6 +7,8 @@
     <string name="image_placeholder">Noch kein Kartenbild aufgenommen</string>
     <string name="button_scan">Karte scannen</string>
     <string name="button_test_price">Testpreis</string>
+    <string name="button_add_collection">Zur Sammlung hinzufuegen</string>
+    <string name="button_delete">Loeschen</string>
     <string name="ocr_idle">Foto aufnehmen, um OCR zu starten.</string>
     <string name="ocr_running">OCR laeuft...</string>
     <string name="ocr_failed">OCR fehlgeschlagen. Bitte ein anderes Foto versuchen.</string>
@@ -17,6 +19,13 @@
     <string name="hide_ocr_debug">OCR-Debug ausblenden</string>
     <string name="match_status">Trefferstatus</string>
     <string name="test_price_result">Testpreis-Ergebnis</string>
+    <string name="my_collection">Meine Sammlung</string>
+    <string name="collection_empty">Noch keine gespeicherten Karten.</string>
+    <string name="collection_added">Karte wurde zur Sammlung hinzugefuegt.</string>
+    <string name="collection_deleted">Karte wurde aus der Sammlung entfernt.</string>
+    <string name="collection_scan_date">Scan-Datum</string>
+    <string name="collection_condition">Zustand</string>
+    <string name="collection_price_source">Preisquelle</string>
     <string name="card_not_recognized">Card could not be recognized</string>
     <string name="possible_matches_found">Possible matches found</string>
     <string name="no_reliable_match_found">No reliable match found</string>
