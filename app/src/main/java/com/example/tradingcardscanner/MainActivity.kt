@@ -204,6 +204,7 @@ class MainActivity : ComponentActivity() {
 
             appendLine("${getString(R.string.possible_card_name)}: ${candidate.possibleName ?: getString(R.string.value_unavailable)}")
             appendLine("${getString(R.string.possible_card_number)}: ${candidate.possibleNumber ?: getString(R.string.value_unavailable)}")
+            appendLine("${getString(R.string.cleaned_ocr_query)}: ${candidate.cleanedQuery}")
             appendLine("${getString(R.string.recognition_confidence)}: ${candidate.confidenceScore}%")
             appendLine()
             append(getString(R.string.next_tcgdex_matching))
