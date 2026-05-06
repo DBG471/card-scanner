@@ -52,7 +52,10 @@ class TcgdexCardMatcher(
     }
 
     fun debugQueries(candidate: OcrCardCandidate): String {
-        return buildCandidateQueries(candidate).joinToString("\n") { it.description }
+        return buildString {
+            appendLine("cleaned OCR query=${candidate.cleanedQuery}")
+            append(buildCandidateQueries(candidate).joinToString("\n") { it.description })
+        }.trim()
     }
 
     private fun buildCandidateQueries(candidate: OcrCardCandidate): List<CardQuery> {
