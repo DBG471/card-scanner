@@ -26,8 +26,8 @@ class TcgdexCardMatcher(
         Thread {
             runCatching {
                 val briefCards = queries
-                    .flatMap { query -> fetchBriefCards(query).map { it.copy(queryUsed = query.description) } }
-                    .distinctBy { it.id }
+                    .flatMap { query -> fetchBriefCards(query) }
+                    .distinctBy { "${it.language}:${it.id}" }
                     .take(MAX_DETAIL_FETCH)
 
                 briefCards.mapNotNull(::fetchCardDetails)
@@ -62,29 +62,64 @@ class TcgdexCardMatcher(
         val queries = mutableListOf<CardQuery>()
         val rawNumber = candidate.numberPrefix
         val number = rawNumber?.padLocalId()
+        val name = candidate.possibleName?.takeIf { it.length >= 3 }
+        val localIds = listOfNotNull(number, rawNumber).distinct()
 
         for (language in listOf("de", "en")) {
-            if (number != null) queries += CardQuery(cardsUrl(language, "localId", number), "$language localId=$number")
-            if (rawNumber != null && rawNumber != number) queries += CardQuery(cardsUrl(language, "localId", rawNumber), "$language localId=$rawNumber")
+            for (localId in localIds) {
+                if (name != null) {
+                    queries += CardQuery(
+                        language = language,
+                        url = cardsUrl(
+                            language,
+                            mapOf("localId" to "eq:$localId", "name" to "like:$name")
+                        ),
+                        description = "$language localId=eq:$localId name=like:$name"
+                    )
+                    queries += CardQuery(
+                        language = language,
+                        url = cardsUrl(
+                            language,
+                            mapOf("localId" to localId, "name" to name)
+                        ),
+                        description = "$language localId=$localId name=$name"
+                    )
+                }
+                queries += CardQuery(
+                    language = language,
+                    url = cardsUrl(language, mapOf("localId" to "eq:$localId")),
+                    description = "$language localId=eq:$localId"
+                )
+                queries += CardQuery(
+                    language = language,
+                    url = cardsUrl(language, mapOf("localId" to localId)),
+                    description = "$language localId=$localId"
+                )
+            }
         }
 
-        if (queries.isEmpty()) {
+        if (name != null) {
             for (language in listOf("de", "en")) {
-                candidate.possibleName?.takeIf { it.length >= 3 }?.let { name ->
-                    queries += CardQuery(cardsUrl(language, "name", name), "$language name=$name")
-                }
+                queries += CardQuery(
+                    language = language,
+                    url = cardsUrl(language, mapOf("name" to "eq:$name")),
+                    description = "$language name=eq:$name"
+                )
+                queries += CardQuery(
+                    language = language,
+                    url = cardsUrl(language, mapOf("name" to name)),
+                    description = "$language name=$name"
+                )
             }
         }
 
         return queries.distinctBy { it.url }
     }
 
-    private fun cardsUrl(language: String, key: String, value: String): String {
-        return "$API_BASE/$language/cards".toHttpUrl()
-            .newBuilder()
-            .addQueryParameter(key, value)
-            .build()
-            .toString()
+    private fun cardsUrl(language: String, filters: Map<String, String>): String {
+        val builder = "$API_BASE/$language/cards".toHttpUrl().newBuilder()
+        filters.forEach { (key, value) -> builder.addQueryParameter(key, value) }
+        return builder.build().toString()
     }
 
     private fun fetchBriefCards(query: CardQuery): List<CardBrief> {
@@ -96,8 +131,10 @@ class TcgdexCardMatcher(
                 val item = array.optJSONObject(index) ?: return@mapNotNull null
                 CardBrief(
                     id = item.optString("id"),
+                    localId = item.optString("localId"),
                     name = item.optString("name"),
                     image = item.optString("image").takeIf { it.isNotBlank() },
+                    language = query.language,
                     queryUsed = query.description
                 )
             }
@@ -105,9 +142,8 @@ class TcgdexCardMatcher(
     }
 
     private fun fetchCardDetails(brief: CardBrief): Pair<CardDetails, String>? {
-        val language = languageFromImageUrl(brief.image) ?: "de"
         val request = Request.Builder()
-            .url("$API_BASE/$language/cards/${brief.id}")
+            .url("$API_BASE/${brief.language}/cards/${brief.id}")
             .get()
             .build()
 
@@ -126,7 +162,7 @@ class TcgdexCardMatcher(
         val nameScore = fuzzyNameScore(candidate.possibleName.orEmpty(), card.name)
 
         if (candidateNumber != null && cardNumber == candidateNumber) {
-            score += 55
+            score += 65
             reasons += "card number matched ${candidate.possibleNumber}"
         }
 
@@ -141,8 +177,8 @@ class TcgdexCardMatcher(
 
         score += when {
             nameScore == 100 -> 35
-            nameScore >= 90 -> 30
-            nameScore >= 80 -> 22
+            nameScore >= 90 -> 32
+            nameScore >= 80 -> 24
             nameScore >= 70 -> 14
             else -> 0
         }
@@ -170,6 +206,11 @@ class TcgdexCardMatcher(
                         cardNumber == candidateNumber &&
                         totalMatches &&
                         nameIsStrong
+                ) || (
+                    candidateNumber != null &&
+                        cardNumber == candidateNumber &&
+                        candidate.numberTotal == null &&
+                        nameScore == 100
                 ),
             queryUsed = queryUsed,
             matchReason = reasons.joinToString("; ").ifBlank { "low confidence fuzzy candidate" }
@@ -230,18 +271,17 @@ class TcgdexCardMatcher(
         return costs[right.length]
     }
 
-    private fun languageFromImageUrl(imageUrl: String?): String? {
-        return imageUrl?.split("/")?.getOrNull(3)
-    }
-
     private data class CardBrief(
         val id: String,
+        val localId: String,
         val name: String,
         val image: String?,
+        val language: String,
         val queryUsed: String
     )
 
     private data class CardQuery(
+        val language: String,
         val url: String,
         val description: String
     )
