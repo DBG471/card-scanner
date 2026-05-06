@@ -7,6 +7,8 @@
     <string name="image_placeholder">No card image captured yet</string>
     <string name="button_scan">Scan Card</string>
     <string name="button_test_price">Test Price</string>
+    <string name="button_add_collection">Add to Collection</string>
+    <string name="button_delete">Delete</string>
     <string name="ocr_idle">Take a card photo to run OCR.</string>
     <string name="ocr_running">Running OCR...</string>
     <string name="ocr_failed">OCR failed. Please try another photo.</string>
@@ -17,6 +19,13 @@
     <string name="hide_ocr_debug">Hide OCR debug</string>
     <string name="match_status">Match status</string>
     <string name="test_price_result">Test Price result</string>
+    <string name="my_collection">My Collection</string>
+    <string name="collection_empty">No saved cards yet.</string>
+    <string name="collection_added">Card added to collection.</string>
+    <string name="collection_deleted">Card removed from collection.</string>
+    <string name="collection_scan_date">Scan date</string>
+    <string name="collection_condition">Condition</string>
+    <string name="collection_price_source">Price source</string>
     <string name="card_not_recognized">Card could not be recognized</string>
     <string name="possible_matches_found">Possible matches found</string>
     <string name="no_reliable_match_found">No reliable match found</string>
