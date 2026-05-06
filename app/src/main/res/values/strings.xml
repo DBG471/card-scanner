@@ -10,6 +10,7 @@
     <string name="ocr_idle">Take a card photo to run OCR.</string>
     <string name="ocr_running">Running OCR...</string>
     <string name="ocr_failed">OCR failed. Please try another photo.</string>
+    <string name="ocr_init_failed">OCR is unavailable on this device. The app can still open and Test Price remains available.</string>
     <string name="ocr_result_title">OCR recognition</string>
     <string name="raw_ocr_title">Raw OCR text</string>
     <string name="card_not_recognized">Card could not be recognized</string>
