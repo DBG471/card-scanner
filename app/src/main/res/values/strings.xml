@@ -14,6 +14,7 @@
     <string name="raw_ocr_title">Raw OCR text</string>
     <string name="card_not_recognized">Card could not be recognized</string>
     <string name="possible_matches_found">Possible matches found</string>
+    <string name="no_reliable_match_found">No reliable match found</string>
     <string name="strong_match_found">Strong match found</string>
     <string name="no_possible_matches">No possible matches found</string>
     <string name="matching_cards">Matching against TCGdex...</string>
@@ -24,6 +25,13 @@
     <string name="match_set">Set</string>
     <string name="match_rarity">Rarity</string>
     <string name="match_confidence">Confidence</string>
+    <string name="match_reason">Reason</string>
+    <string name="match_query">TCGdex query</string>
+    <string name="debug_overlay">Show OCR region overlay</string>
+    <string name="debug_crop">Detected card crop</string>
+    <string name="debug_fallback_crop">fallback crop</string>
+    <string name="debug_title_region">Title OCR region</string>
+    <string name="debug_number_region">Number OCR region</string>
     <string name="label_condition">Condition</string>
     <string name="label_source">Pricing source</string>
     <string name="source_cardmarket">Cardmarket</string>
@@ -46,6 +54,18 @@
     <string name="camera_permission_needed">Camera permission is needed to scan a card.</string>
     <string name="camera_unavailable">No camera app is available.</string>
     <string name="source_coming_soon">Prepared for future support</string>
-    <string-array name="condition_labels"><item>NM (Near Mint)</item><item>EX</item><item>GD</item><item>LP</item><item>Played</item><item>Poor</item></string-array>
-    <string-array name="pricing_source_labels"><item>@string/source_cardmarket</item><item>@string/source_ebay</item><item>@string/source_psa</item><item>@string/source_pricecharting</item></string-array>
+    <string-array name="condition_labels">
+        <item>NM (Near Mint)</item>
+        <item>EX</item>
+        <item>GD</item>
+        <item>LP</item>
+        <item>Played</item>
+        <item>Poor</item>
+    </string-array>
+    <string-array name="pricing_source_labels">
+        <item>@string/source_cardmarket</item>
+        <item>@string/source_ebay</item>
+        <item>@string/source_psa</item>
+        <item>@string/source_pricecharting</item>
+    </string-array>
 </resources>
