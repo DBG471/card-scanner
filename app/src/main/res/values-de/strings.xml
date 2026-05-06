@@ -13,6 +13,10 @@
     <string name="ocr_init_failed">OCR ist auf diesem Geraet nicht verfuegbar. Die App kann trotzdem starten und Testpreis bleibt verfuegbar.</string>
     <string name="ocr_result_title">OCR-Erkennung</string>
     <string name="raw_ocr_title">OCR-Rohtext</string>
+    <string name="show_ocr_debug">OCR-Debug anzeigen</string>
+    <string name="hide_ocr_debug">OCR-Debug ausblenden</string>
+    <string name="match_status">Trefferstatus</string>
+    <string name="test_price_result">Testpreis-Ergebnis</string>
     <string name="card_not_recognized">Card could not be recognized</string>
     <string name="possible_matches_found">Possible matches found</string>
     <string name="no_reliable_match_found">No reliable match found</string>
@@ -41,7 +45,6 @@
     <string name="source_psa">PSA</string>
     <string name="source_pricecharting">PriceCharting</string>
     <string name="price_idle">Tippe auf Testpreis, um die TCGdex-Beispielkarte zu laden.</string>
-    <string name="price_waiting_match">Cardmarket-Preise erscheinen nach einem starken OCR-Treffer.</string>
     <string name="price_loading">Kartenpreis wird geladen...</string>
     <string name="price_error">Preisdaten konnten nicht geladen werden.</string>
     <string name="no_pricing_data">Keine Preisdaten gefunden</string>
