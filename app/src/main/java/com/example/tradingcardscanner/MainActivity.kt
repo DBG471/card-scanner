@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var sourceSpinner: Spinner
     private lateinit var recognitionTextView: TextView
     private lateinit var matchesContainer: LinearLayout
+    private lateinit var ocrDebugButton: Button
     private lateinit var rawOcrTextView: TextView
     private lateinit var priceTextView: TextView
     private lateinit var testPriceButton: Button
@@ -56,6 +57,11 @@ class MainActivity : ComponentActivity() {
     private val pokemonOcrAnalyzer = PokemonOcrAnalyzer()
     private var textRecognizer: TextRecognizer? = null
     private var pendingPhotoUri: Uri? = null
+    private var scanResult: CardMatch? = null
+    private var testPriceResult: CardDetails? = null
+    private var ocrDebugText: String = ""
+    private var latestOcrCandidate: OcrCardCandidate? = null
+    private var isOcrDebugExpanded: Boolean = false
 
     private val requestCameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -89,9 +95,11 @@ class MainActivity : ComponentActivity() {
         sourceSpinner = findViewById(R.id.sourceSpinner)
         recognitionTextView = findViewById(R.id.recognitionTextView)
         matchesContainer = findViewById(R.id.matchesContainer)
+        ocrDebugButton = findViewById(R.id.ocrDebugButton)
         rawOcrTextView = findViewById(R.id.rawOcrTextView)
         priceTextView = findViewById(R.id.priceTextView)
         testPriceButton = findViewById(R.id.testPriceButton)
+        priceTextView.text = getString(R.string.price_idle)
 
         textRecognizer = runCatching {
             TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -105,6 +113,10 @@ class MainActivity : ComponentActivity() {
         }
         testPriceButton.setOnClickListener {
             loadTestPrice()
+        }
+        ocrDebugButton.setOnClickListener {
+            isOcrDebugExpanded = !isOcrDebugExpanded
+            renderOcrDebug()
         }
     }
 
@@ -148,10 +160,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runOcr(imageUri: Uri) {
+        scanResult = null
+        testPriceResult = null
+        latestOcrCandidate = null
+        ocrDebugText = ""
+        isOcrDebugExpanded = false
         recognitionTextView.text = getString(R.string.ocr_running)
         matchesContainer.removeAllViews()
-        rawOcrTextView.text = getString(R.string.raw_ocr_title)
-        priceTextView.text = getString(R.string.price_waiting_match)
+        ocrDebugButton.visibility = View.GONE
+        rawOcrTextView.visibility = View.GONE
+        rawOcrTextView.text = ""
+        priceTextView.text = getString(R.string.price_idle)
 
         val recognizer = textRecognizer
         if (recognizer == null) {
@@ -171,52 +190,60 @@ class MainActivity : ComponentActivity() {
     private fun showOcrResult(text: Text) {
         val rawText = text.text.trim()
         val candidate = pokemonOcrAnalyzer.analyze(text)
+        latestOcrCandidate = candidate
 
-        recognitionTextView.text = formatOcrCandidate(candidate)
-        rawOcrTextView.text = buildString {
+        recognitionTextView.text = formatScanSummary(candidate, getString(R.string.matching_cards))
+        ocrDebugText = buildString {
             appendLine(getString(R.string.raw_ocr_title))
             candidate.debugNotes.forEach { appendLine(it) }
             appendLine()
             append(if (rawText.isBlank()) getString(R.string.value_unavailable) else rawText)
         }
+        ocrDebugButton.visibility = View.VISIBLE
+        renderOcrDebug()
 
         findTcgdexMatches(candidate)
     }
 
     private fun showOcrFailure(message: String = getString(R.string.ocr_failed)) {
+        scanResult = null
+        latestOcrCandidate = null
         matchesContainer.removeAllViews()
         recognitionTextView.text = message
-        rawOcrTextView.text = buildString {
+        ocrDebugText = buildString {
             appendLine(getString(R.string.raw_ocr_title))
             appendLine()
             append(getString(R.string.value_unavailable))
         }
+        ocrDebugButton.visibility = View.VISIBLE
+        renderOcrDebug()
     }
 
-    private fun formatOcrCandidate(candidate: OcrCardCandidate): String {
+    private fun formatScanSummary(candidate: OcrCardCandidate, status: String): String {
         return buildString {
             appendLine(getString(R.string.ocr_result_title))
             appendLine()
-
-            if (!candidate.isReliable) {
-                appendLine(getString(R.string.card_not_recognized))
-            }
-
             appendLine("${getString(R.string.possible_card_name)}: ${candidate.possibleName ?: getString(R.string.value_unavailable)}")
             appendLine("${getString(R.string.possible_card_number)}: ${candidate.possibleNumber ?: getString(R.string.value_unavailable)}")
-            appendLine("${getString(R.string.cleaned_ocr_query)}: ${candidate.cleanedQuery}")
-            appendLine("${getString(R.string.recognition_confidence)}: ${candidate.confidenceScore}%")
-            appendLine()
-            append(getString(R.string.next_tcgdex_matching))
+            append("${getString(R.string.match_status)}: $status")
         }
     }
 
     private fun findTcgdexMatches(candidate: OcrCardCandidate) {
         matchesContainer.removeAllViews()
-        if (candidate.possibleName == null && candidate.numberPrefix == null) return
+        if (candidate.possibleName == null && candidate.numberPrefix == null) {
+            recognitionTextView.text = formatScanSummary(candidate, getString(R.string.no_reliable_match_found))
+            return
+        }
 
-        recognitionTextView.append("\n\n${getString(R.string.matching_cards)}")
-        recognitionTextView.append("\n${getString(R.string.match_query)}:\n${tcgdexCardMatcher.debugQueries(candidate)}")
+        ocrDebugText = buildString {
+            append(ocrDebugText)
+            appendLine()
+            appendLine()
+            appendLine(getString(R.string.match_query))
+            append(tcgdexCardMatcher.debugQueries(candidate))
+        }
+        renderOcrDebug()
         tcgdexCardMatcher.findMatches(candidate) { result ->
             runOnUiThread {
                 result
@@ -229,27 +256,30 @@ class MainActivity : ComponentActivity() {
     private fun showMatches(matches: List<CardMatch>) {
         matchesContainer.removeAllViews()
         val strongMatch = matches.firstOrNull { it.isStrong }
+        scanResult = strongMatch
+        val candidate = latestOcrCandidate
 
-        recognitionTextView.text = buildString {
-            appendLine(if (strongMatch != null) getString(R.string.strong_match_found) else getString(R.string.no_reliable_match_found))
-            if (matches.isEmpty()) {
-                appendLine(getString(R.string.no_possible_matches))
-            }
-        }.trim()
-
-        if (strongMatch != null) {
-            matches.take(1).forEach { match ->
-                matchesContainer.addView(createMatchView(match))
-            }
+        recognitionTextView.text = if (candidate != null) {
+            formatScanSummary(
+                candidate,
+                if (strongMatch != null) getString(R.string.strong_match_found) else getString(R.string.no_reliable_match_found)
+            )
         } else {
-            matchesContainer.addView(debugLowConfidenceView(matches))
+            if (strongMatch != null) getString(R.string.strong_match_found) else getString(R.string.no_reliable_match_found)
         }
 
         if (strongMatch != null) {
-            priceTextView.text = formatCardDetails(strongMatch.card)
-        } else if (matches.isNotEmpty()) {
-            priceTextView.text = getString(R.string.price_waiting_match)
+            matchesContainer.addView(createMatchView(strongMatch))
+            matchesContainer.addView(createCardDetailsView(strongMatch.card))
         }
+    }
+
+    private fun renderOcrDebug() {
+        ocrDebugButton.text = getString(
+            if (isOcrDebugExpanded) R.string.hide_ocr_debug else R.string.show_ocr_debug
+        )
+        rawOcrTextView.visibility = if (isOcrDebugExpanded) View.VISIBLE else View.GONE
+        rawOcrTextView.text = ocrDebugText
     }
 
     private fun createMatchView(match: CardMatch): View {
@@ -292,22 +322,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun debugLowConfidenceView(matches: List<CardMatch>): View {
+    private fun createCardDetailsView(card: CardDetails): View {
         return TextView(this).apply {
             setBackgroundResource(R.drawable.info_panel)
             setPadding(dp(12), dp(12), dp(12), dp(12))
             setTextColor((0xFF18313B).toInt())
-            textSize = 13f
-            text = buildString {
-                appendLine(getString(R.string.no_reliable_match_found))
-                appendLine()
-                matches.take(3).forEachIndexed { index, match ->
-                    appendLine("${index + 1}. ${match.card.name} (${match.confidence}%)")
-                    appendLine("${getString(R.string.match_query)}: ${match.queryUsed}")
-                    appendLine("${getString(R.string.match_reason)}: ${match.matchReason}")
-                    appendLine()
-                }
-            }.trim()
+            textSize = 15f
+            text = formatCardDetails(card)
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            params.setMargins(0, 0, 0, dp(10))
+            layoutParams = params
         }
     }
 
@@ -329,8 +356,15 @@ class MainActivity : ComponentActivity() {
         pricingSource.fetchSampleCard { result ->
             runOnUiThread {
                 testPriceButton.isEnabled = true
+                testPriceResult = result.getOrNull()
                 priceTextView.text = result.fold(
-                    onSuccess = ::formatCardDetails,
+                    onSuccess = { card ->
+                        buildString {
+                            appendLine(getString(R.string.test_price_result))
+                            appendLine()
+                            append(formatCardDetails(card))
+                        }
+                    },
                     onFailure = { getString(R.string.price_error) }
                 )
             }
