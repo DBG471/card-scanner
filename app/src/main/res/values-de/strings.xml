@@ -21,6 +21,7 @@
     <string name="matching_cards">Abgleich mit TCGdex...</string>
     <string name="possible_card_name">Moeglicher Kartenname</string>
     <string name="possible_card_number">Moegliche Kartennummer</string>
+    <string name="cleaned_ocr_query">Bereinigte OCR-Abfrage</string>
     <string name="recognition_confidence">Erkennungs-Konfidenz</string>
     <string name="next_tcgdex_matching">OCR-Text wird mit Kartennummer und Name gegen TCGdex abgeglichen.</string>
     <string name="match_set">Set</string>
