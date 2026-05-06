@@ -17,6 +17,7 @@ object TcgdexCardParser {
             id = root.optString("id", ""),
             name = root.optString("name", ""),
             setName = set?.optString("name", "").orEmpty(),
+            rarity = root.optString("rarity").takeIf { it.isNotBlank() },
             number = root.optString("localId", ""),
             setOfficialTotal = cardCount?.optString("official")?.takeIf { it.isNotBlank() },
             imageUrl = root.optString("image").takeIf { it.isNotBlank() },
