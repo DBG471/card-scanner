@@ -4,6 +4,7 @@ data class CardDetails(
     val id: String,
     val name: String,
     val setName: String,
+    val rarity: String?,
     val number: String,
     val setOfficialTotal: String?,
     val imageUrl: String?,
