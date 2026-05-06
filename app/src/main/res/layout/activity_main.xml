@@ -11,173 +11,33 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <TextView
-            android:id="@+id/titleText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/title_scan"
-            android:textColor="#102027"
-            android:textSize="26sp"
-            android:textStyle="bold" />
+        <TextView android:id="@+id/titleText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/title_scan" android:textColor="#102027" android:textSize="26sp" android:textStyle="bold" />
+        <TextView android:id="@+id/subtitleText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/subtitle_scan" android:textColor="#52636D" android:textSize="15sp" />
 
-        <TextView
-            android:id="@+id/subtitleText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/subtitle_scan"
-            android:textColor="#52636D"
-            android:textSize="15sp" />
-
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="320dp"
-            android:layout_marginTop="18dp"
-            android:background="@drawable/preview_frame"
-            android:minHeight="260dp">
-
-            <ImageView
-                android:id="@+id/cardImageView"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:adjustViewBounds="true"
-                android:contentDescription="@string/image_preview"
-                android:scaleType="centerCrop" />
-
-            <TextView
-                android:id="@+id/imagePlaceholderText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:gravity="center"
-                android:padding="16dp"
-                android:text="@string/image_placeholder"
-                android:textColor="#60717B"
-                android:textSize="15sp" />
+        <FrameLayout android:layout_width="match_parent" android:layout_height="320dp" android:layout_marginTop="18dp" android:background="@drawable/preview_frame" android:minHeight="260dp">
+            <ImageView android:id="@+id/cardImageView" android:layout_width="match_parent" android:layout_height="match_parent" android:adjustViewBounds="true" android:contentDescription="@string/image_preview" android:scaleType="centerCrop" />
+            <TextView android:id="@+id/imagePlaceholderText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center" android:gravity="center" android:padding="16dp" android:text="@string/image_placeholder" android:textColor="#60717B" android:textSize="15sp" />
         </FrameLayout>
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/scanButton"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:background="@drawable/primary_button"
-                android:text="@string/button_scan"
-                android:textAllCaps="false"
-                android:textColor="#FFFFFF" />
-
-            <Button
-                android:id="@+id/testPriceButton"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="12dp"
-                android:layout_weight="1"
-                android:background="@drawable/secondary_button"
-                android:text="@string/button_test_price"
-                android:textAllCaps="false"
-                android:textColor="#164D61" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:orientation="horizontal">
+            <Button android:id="@+id/scanButton" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:background="@drawable/primary_button" android:text="@string/button_scan" android:textAllCaps="false" android:textColor="#FFFFFF" />
+            <Button android:id="@+id/testPriceButton" android:layout_width="0dp" android:layout_height="48dp" android:layout_marginStart="12dp" android:layout_weight="1" android:background="@drawable/secondary_button" android:text="@string/button_test_price" android:textAllCaps="false" android:textColor="#164D61" />
         </LinearLayout>
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_condition"
-                    android:textColor="#52636D"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-
-                <Spinner
-                    android:id="@+id/conditionSpinner"
-                    android:layout_width="match_parent"
-                    android:layout_height="46dp"
-                    android:layout_marginTop="6dp"
-                    android:background="@drawable/input_background"
-                    android:entries="@array/condition_labels" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:orientation="horizontal">
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/label_condition" android:textColor="#52636D" android:textSize="13sp" android:textStyle="bold" />
+                <Spinner android:id="@+id/conditionSpinner" android:layout_width="match_parent" android:layout_height="46dp" android:layout_marginTop="6dp" android:background="@drawable/input_background" android:entries="@array/condition_labels" />
             </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_source"
-                    android:textColor="#52636D"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-
-                <Spinner
-                    android:id="@+id/sourceSpinner"
-                    android:layout_width="match_parent"
-                    android:layout_height="46dp"
-                    android:layout_marginTop="6dp"
-                    android:background="@drawable/input_background"
-                    android:entries="@array/pricing_source_labels" />
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_weight="1" android:orientation="vertical">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/label_source" android:textColor="#52636D" android:textSize="13sp" android:textStyle="bold" />
+                <Spinner android:id="@+id/sourceSpinner" android:layout_width="match_parent" android:layout_height="46dp" android:layout_marginTop="6dp" android:background="@drawable/input_background" android:entries="@array/pricing_source_labels" />
             </LinearLayout>
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/recognitionTextView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:background="@drawable/info_panel"
-            android:lineSpacingExtra="4dp"
-            android:minHeight="104dp"
-            android:padding="16dp"
-            android:text="@string/ocr_idle"
-            android:textColor="#18313B"
-            android:textIsSelectable="true"
-            android:textSize="15sp" />
-
-        <TextView
-            android:id="@+id/rawOcrTextView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="@drawable/info_panel"
-            android:lineSpacingExtra="4dp"
-            android:minHeight="132dp"
-            android:padding="16dp"
-            android:text="@string/raw_ocr_title"
-            android:textColor="#18313B"
-            android:textIsSelectable="true"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/priceTextView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:background="@drawable/info_panel"
-            android:lineSpacingExtra="4dp"
-            android:minHeight="160dp"
-            android:padding="16dp"
-            android:text="@string/price_idle"
-            android:textColor="#18313B"
-            android:textIsSelectable="true"
-            android:textSize="15sp" />
+        <TextView android:id="@+id/recognitionTextView" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:background="@drawable/info_panel" android:lineSpacingExtra="4dp" android:minHeight="104dp" android:padding="16dp" android:text="@string/ocr_idle" android:textColor="#18313B" android:textIsSelectable="true" android:textSize="15sp" />
+        <LinearLayout android:id="@+id/matchesContainer" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:orientation="vertical" />
+        <TextView android:id="@+id/rawOcrTextView" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:background="@drawable/info_panel" android:lineSpacingExtra="4dp" android:minHeight="132dp" android:padding="16dp" android:text="@string/raw_ocr_title" android:textColor="#18313B" android:textIsSelectable="true" android:textSize="14sp" />
+        <TextView android:id="@+id/priceTextView" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:background="@drawable/info_panel" android:lineSpacingExtra="4dp" android:minHeight="160dp" android:padding="16dp" android:text="@string/price_idle" android:textColor="#18313B" android:textIsSelectable="true" android:textSize="15sp" />
     </LinearLayout>
 </ScrollView>
