@@ -139,6 +139,34 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/recognitionTextView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/info_panel"
+            android:lineSpacingExtra="4dp"
+            android:minHeight="104dp"
+            android:padding="16dp"
+            android:text="@string/ocr_idle"
+            android:textColor="#18313B"
+            android:textIsSelectable="true"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/rawOcrTextView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/info_panel"
+            android:lineSpacingExtra="4dp"
+            android:minHeight="132dp"
+            android:padding="16dp"
+            android:text="@string/raw_ocr_title"
+            android:textColor="#18313B"
+            android:textIsSelectable="true"
+            android:textSize="14sp" />
+
+        <TextView
             android:id="@+id/priceTextView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
