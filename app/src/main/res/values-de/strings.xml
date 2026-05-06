@@ -10,6 +10,7 @@
     <string name="ocr_idle">Foto aufnehmen, um OCR zu starten.</string>
     <string name="ocr_running">OCR laeuft...</string>
     <string name="ocr_failed">OCR fehlgeschlagen. Bitte ein anderes Foto versuchen.</string>
+    <string name="ocr_init_failed">OCR ist auf diesem Geraet nicht verfuegbar. Die App kann trotzdem starten und Testpreis bleibt verfuegbar.</string>
     <string name="ocr_result_title">OCR-Erkennung</string>
     <string name="raw_ocr_title">OCR-Rohtext</string>
     <string name="card_not_recognized">Card could not be recognized</string>
