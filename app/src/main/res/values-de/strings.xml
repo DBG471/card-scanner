@@ -7,6 +7,16 @@
     <string name="image_placeholder">Noch kein Kartenbild aufgenommen</string>
     <string name="button_scan">Karte scannen</string>
     <string name="button_test_price">Testpreis</string>
+    <string name="ocr_idle">Foto aufnehmen, um OCR zu starten.</string>
+    <string name="ocr_running">OCR laeuft...</string>
+    <string name="ocr_failed">OCR fehlgeschlagen. Bitte ein anderes Foto versuchen.</string>
+    <string name="ocr_result_title">OCR-Erkennung</string>
+    <string name="raw_ocr_title">OCR-Rohtext</string>
+    <string name="card_not_recognized">Card could not be recognized</string>
+    <string name="possible_card_name">Moeglicher Kartenname</string>
+    <string name="possible_card_number">Moegliche Kartennummer</string>
+    <string name="recognition_confidence">Erkennungs-Konfidenz</string>
+    <string name="next_tcgdex_matching">Bereit fuer den naechsten Schritt: OCR-Text mit TCGdex abgleichen.</string>
     <string name="label_condition">Zustand</string>
     <string name="label_source">Preisquelle</string>
     <string name="source_cardmarket">Cardmarket</string>
