@@ -50,3 +50,5 @@ gradle assembleDebug
 ```
 
 Codemagic can use the included `codemagic.yaml` workflow and will collect APK artifacts from `app/build/outputs/**/*.apk`.
+
+CI artifact build requested from `codex/apk-build-trigger`.
