@@ -1,39 +1,52 @@
-# Trading Card Scanner
+# TradingCardScanner
 
-Native Android scanner app for trading-card capture workflows.
+Clean native Android Kotlin app for scanning a trading card image and testing pricing data from TCGdex.
 
-## Features
+## What is included
 
-- Starts a Google ML Kit Document Scanner session
-- Uses ML Kit's document scanner UI for rectangular edge detection
-- Auto crops, straightens, and applies perspective correction through ML Kit
-- Supports batch scanning up to 40 cards in one session
-- Saves cropped JPEG scans locally under the app's private files directory
-- Shows saved scans in a simple local gallery
-- Opens a full-image preview from the gallery and supports sharing scans
+- Native Android Kotlin project, no Flutter.
+- Camera capture flow using `ActivityResultContracts.TakePicture`.
+- Captured image preview inside the app.
+- `Test Price` button that loads:
+  `https://api.tcgdex.net/v2/en/cards/swsh3-136`
+- Cardmarket pricing display for trend, low, 30-day average, and holo prices when present.
+- English and German string resources.
+- Card condition model for NM, EX, GD, LP, Played, and Poor.
+- Pricing source architecture prepared for Cardmarket, eBay sold listings, PSA, and PriceCharting.
+- `INTERNET` and `CAMERA` permissions.
+- OkHttp-based API layer.
 
-## Cloud build
+## Project structure
 
-The project is configured for Codemagic in `codemagic.yaml`.
+```text
+app/src/main/java/com/example/tradingcardscanner/
+  MainActivity.kt
+  data/
+    PricingSource.kt
+    TcgdexCardParser.kt
+    TcgdexPricingSource.kt
+  domain/
+    CardCondition.kt
+    CardDetails.kt
+    ConditionPriceAdjuster.kt
+    PricingSourceType.kt
+```
 
-Use the `android-debug` workflow. It runs:
+`ConditionPriceAdjuster` currently keeps all multipliers at `1.0`; it is the intended place to add condition-based price adjustments later.
+
+## Build
+
+The project uses a stable Android Gradle Plugin and Kotlin plugin pairing:
+
+- Android Gradle Plugin `8.7.3`
+- Kotlin Android plugin `2.0.21`
+- Compile SDK `35`
+- Java/Kotlin JVM target `17`
+
+Build a debug APK with:
 
 ```sh
 gradle assembleDebug
 ```
 
-The debug APK artifact is collected from:
-
-```text
-app/build/outputs/**/*.apk
-```
-
-## Dependencies
-
-Declared in `app/build.gradle`:
-
-- `androidx.activity:activity:1.9.3`
-- `androidx.core:core:1.13.1`
-- `com.google.android.gms:play-services-mlkit-document-scanner:16.0.0`
-
-No card recognition, price lookup, accounts, or network product features are included.
+Codemagic can use the included `codemagic.yaml` workflow and will collect APK artifacts from `app/build/outputs/**/*.apk`.

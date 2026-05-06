@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TradingCardScanner</string>
+    <string name="title_scan">TradingCardScanner</string>
+    <string name="subtitle_scan">Scannen, pruefen und Kartenpreise vorbereiten.</string>
+    <string name="image_preview">Aufgenommenes Sammelkartenbild</string>
+    <string name="image_placeholder">Noch kein Kartenbild aufgenommen</string>
+    <string name="button_scan">Karte scannen</string>
+    <string name="button_test_price">Testpreis</string>
+    <string name="label_condition">Zustand</string>
+    <string name="label_source">Preisquelle</string>
+    <string name="source_cardmarket">Cardmarket</string>
+    <string name="source_ebay">Verkaufte eBay-Angebote</string>
+    <string name="source_psa">PSA</string>
+    <string name="source_pricecharting">PriceCharting</string>
+    <string name="price_idle">Tippe auf Testpreis, um die TCGdex-Beispielkarte zu laden.</string>
+    <string name="price_loading">Kartenpreis wird geladen...</string>
+    <string name="price_error">Preisdaten konnten nicht geladen werden.</string>
+    <string name="no_pricing_data">Keine Preisdaten gefunden</string>
+    <string name="value_unavailable">Nicht verfuegbar</string>
+    <string name="card_name">Kartenname</string>
+    <string name="set_name">Setname</string>
+    <string name="card_number">Kartennummer</string>
+    <string name="trend_price">Cardmarket-Trendpreis</string>
+    <string name="low_price">Cardmarket-Tiefstpreis</string>
+    <string name="avg30_price">30-Tage-Durchschnitt</string>
+    <string name="holo_prices">Holo-Preise</string>
+    <string name="camera_permission_needed">Zum Scannen wird die Kameraberechtigung benoetigt.</string>
+    <string name="camera_unavailable">Keine Kamera-App verfuegbar.</string>
+    <string name="source_coming_soon">Fuer kuenftige Unterstuetzung vorbereitet</string>
+    <string-array name="condition_labels">
+        <item>NM (Near Mint)</item>
+        <item>EX</item>
+        <item>GD</item>
+        <item>LP</item>
+        <item>Played</item>
+        <item>Poor</item>
+    </string-array>
+    <string-array name="pricing_source_labels">
+        <item>@string/source_cardmarket</item>
+        <item>@string/source_ebay</item>
+        <item>@string/source_psa</item>
+        <item>@string/source_pricecharting</item>
+    </string-array>
+</resources>
