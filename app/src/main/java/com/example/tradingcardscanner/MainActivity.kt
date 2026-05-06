@@ -19,6 +19,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.example.tradingcardscanner.data.CollectionRepository
 import com.example.tradingcardscanner.data.OcrCardCandidate
 import com.example.tradingcardscanner.data.PokemonOcrAnalyzer
 import com.example.tradingcardscanner.data.TcgdexCardMatcher
@@ -26,6 +27,7 @@ import com.example.tradingcardscanner.data.TcgdexPricingSource
 import com.example.tradingcardscanner.domain.CardCondition
 import com.example.tradingcardscanner.domain.CardDetails
 import com.example.tradingcardscanner.domain.CardMatch
+import com.example.tradingcardscanner.domain.CollectionCard
 import com.example.tradingcardscanner.domain.ConditionPriceAdjuster
 import com.example.tradingcardscanner.domain.PricingSnapshot
 import com.google.mlkit.vision.common.InputImage
@@ -35,8 +37,10 @@ import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
 import java.net.URL
+import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Currency
+import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -50,11 +54,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var rawOcrTextView: TextView
     private lateinit var priceTextView: TextView
     private lateinit var testPriceButton: Button
+    private lateinit var collectionContainer: LinearLayout
 
     private val pricingSource = TcgdexPricingSource()
     private val tcgdexCardMatcher = TcgdexCardMatcher()
     private val conditionPriceAdjuster = ConditionPriceAdjuster()
     private val pokemonOcrAnalyzer = PokemonOcrAnalyzer()
+    private lateinit var collectionRepository: CollectionRepository
     private var textRecognizer: TextRecognizer? = null
     private var pendingPhotoUri: Uri? = null
     private var scanResult: CardMatch? = null
@@ -99,7 +105,10 @@ class MainActivity : ComponentActivity() {
         rawOcrTextView = findViewById(R.id.rawOcrTextView)
         priceTextView = findViewById(R.id.priceTextView)
         testPriceButton = findViewById(R.id.testPriceButton)
+        collectionContainer = findViewById(R.id.collectionContainer)
+        collectionRepository = CollectionRepository(this)
         priceTextView.text = getString(R.string.price_idle)
+        renderCollection()
 
         textRecognizer = runCatching {
             TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -271,6 +280,7 @@ class MainActivity : ComponentActivity() {
         if (strongMatch != null) {
             matchesContainer.addView(createMatchView(strongMatch))
             matchesContainer.addView(createCardDetailsView(strongMatch.card))
+            matchesContainer.addView(createAddToCollectionButton(strongMatch))
         }
     }
 
@@ -329,6 +339,113 @@ class MainActivity : ComponentActivity() {
             setTextColor((0xFF18313B).toInt())
             textSize = 15f
             text = formatCardDetails(card)
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            params.setMargins(0, 0, 0, dp(10))
+            layoutParams = params
+        }
+    }
+
+    private fun createAddToCollectionButton(match: CardMatch): View {
+        return Button(this).apply {
+            text = getString(R.string.button_add_collection)
+            isAllCaps = false
+            setTextColor((0xFFFFFFFF).toInt())
+            setBackgroundResource(R.drawable.primary_button)
+            setOnClickListener {
+                collectionRepository.addCard(match.toCollectionCard())
+                renderCollection()
+                Toast.makeText(this@MainActivity, R.string.collection_added, Toast.LENGTH_SHORT).show()
+            }
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48)
+            )
+            params.setMargins(0, 0, 0, dp(12))
+            layoutParams = params
+        }
+    }
+
+    private fun CardMatch.toCollectionCard(): CollectionCard {
+        val card = this.card
+        val pricing = card.pricing
+        return CollectionCard(
+            id = "${card.id}-${System.currentTimeMillis()}",
+            cardName = card.name,
+            setName = card.setName,
+            cardNumber = card.number,
+            rarity = card.rarity,
+            condition = selectedConditionLabel(),
+            priceSource = selectedPriceSourceLabel(),
+            cardmarketTrendPrice = pricing?.trend,
+            currencyCode = pricing?.currencyCode ?: "EUR",
+            scanDate = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, currentLocale()).format(Date()),
+            imageUrl = card.imageUrl
+        )
+    }
+
+    private fun renderCollection() {
+        collectionContainer.removeAllViews()
+        val cards = collectionRepository.getCards()
+        if (cards.isEmpty()) {
+            collectionContainer.addView(TextView(this).apply {
+                setBackgroundResource(R.drawable.info_panel)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                setTextColor((0xFF18313B).toInt())
+                textSize = 14f
+                text = getString(R.string.collection_empty)
+            })
+            return
+        }
+
+        cards.forEach { card ->
+            collectionContainer.addView(createCollectionCardView(card))
+        }
+    }
+
+    private fun createCollectionCardView(card: CollectionCard): View {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.info_panel)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+
+        panel.addView(TextView(this).apply {
+            setTextColor((0xFF18313B).toInt())
+            textSize = 14f
+            text = buildString {
+                appendLine(card.cardName)
+                appendLine("${getString(R.string.match_set)}: ${card.setName}")
+                appendLine("${getString(R.string.card_number)}: ${card.cardNumber}")
+                appendLine("${getString(R.string.match_rarity)}: ${card.rarity ?: getString(R.string.value_unavailable)}")
+                appendLine("${getString(R.string.collection_condition)}: ${card.condition}")
+                appendLine("${getString(R.string.collection_price_source)}: ${card.priceSource}")
+                appendLine("${getString(R.string.trend_price)}: ${formatPrice(card.cardmarketTrendPrice, card.currencyCode)}")
+                append("${getString(R.string.collection_scan_date)}: ${card.scanDate}")
+            }
+        })
+
+        panel.addView(Button(this).apply {
+            text = getString(R.string.button_delete)
+            isAllCaps = false
+            setTextColor((0xFF164D61).toInt())
+            setBackgroundResource(R.drawable.secondary_button)
+            setOnClickListener {
+                collectionRepository.deleteCard(card.id)
+                renderCollection()
+                Toast.makeText(this@MainActivity, R.string.collection_deleted, Toast.LENGTH_SHORT).show()
+            }
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(44)
+            )
+            params.setMargins(0, dp(10), 0, 0)
+            layoutParams = params
+        })
+
+        return panel.apply {
             val params = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -410,16 +527,28 @@ class MainActivity : ComponentActivity() {
     private fun formatPrice(value: Double?, currencyCode: String): String {
         if (value == null) return getString(R.string.value_unavailable)
 
-        val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        val locale = currentLocale()
+
+        return NumberFormat.getCurrencyInstance(locale).apply {
+            currency = Currency.getInstance(currencyCode)
+        }.format(value)
+    }
+
+    private fun currentLocale(): Locale {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             resources.configuration.locales[0]
         } else {
             @Suppress("DEPRECATION")
             resources.configuration.locale ?: Locale.getDefault()
         }
+    }
 
-        return NumberFormat.getCurrencyInstance(locale).apply {
-            currency = Currency.getInstance(currencyCode)
-        }.format(value)
+    private fun selectedConditionLabel(): String {
+        return conditionSpinner.selectedItem?.toString().orEmpty().ifBlank { CardCondition.NearMint.name }
+    }
+
+    private fun selectedPriceSourceLabel(): String {
+        return sourceSpinner.selectedItem?.toString().orEmpty().ifBlank { getString(R.string.source_cardmarket) }
     }
 
     private fun dp(value: Int): Int {
