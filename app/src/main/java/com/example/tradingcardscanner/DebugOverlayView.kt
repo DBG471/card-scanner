@@ -5,10 +5,14 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.util.AttributeSet
 import android.view.View
 import com.example.tradingcardscanner.data.CardImageAnalysis
 
-class DebugOverlayView(context: Context) : View(context) {
+class DebugOverlayView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : View(context, attrs) {
     private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(220, 255, 193, 7)
         style = Paint.Style.STROKE
