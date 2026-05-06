@@ -17,22 +17,30 @@ class TcgdexCardMatcher(
         candidate: OcrCardCandidate,
         callback: (Result<List<CardMatch>>) -> Unit
     ) {
-        val urls = buildCandidateUrls(candidate)
-        if (urls.isEmpty()) {
+        val queries = buildCandidateQueries(candidate)
+        if (queries.isEmpty()) {
             callback(Result.success(emptyList()))
             return
         }
 
         Thread {
             runCatching {
-                val briefCards = urls
-                    .flatMap(::fetchBriefCards)
+                val briefCards = queries
+                    .flatMap { query -> fetchBriefCards(query).map { it.copy(queryUsed = query.description) } }
                     .distinctBy { it.id }
                     .take(MAX_DETAIL_FETCH)
 
                 briefCards.mapNotNull(::fetchCardDetails)
                     .map { card -> score(card, candidate) }
-                    .filter { it.confidence >= MIN_VISIBLE_CONFIDENCE }
+                    .filter { match ->
+                        val numberMatches = candidate.numberPrefix
+                            ?.let { match.card.normalizedNumber == it.normalizedCardNumber() }
+                            ?: true
+                        val nameMatches = candidate.possibleName
+                            ?.let { fuzzyNameScore(it, match.card.name) >= MIN_NAME_KEEP_SCORE }
+                            ?: true
+                        match.confidence >= MIN_VISIBLE_CONFIDENCE && numberMatches && nameMatches
+                    }
                     .sortedWith(compareByDescending<CardMatch> { it.confidence }.thenBy { it.card.name })
                     .take(3)
             }.onSuccess { matches ->
@@ -43,20 +51,29 @@ class TcgdexCardMatcher(
         }.start()
     }
 
-    private fun buildCandidateUrls(candidate: OcrCardCandidate): List<String> {
-        val urls = mutableListOf<String>()
-        val number = candidate.numberPrefix?.padStart(3, '0')
+    fun debugQueries(candidate: OcrCardCandidate): String {
+        return buildCandidateQueries(candidate).joinToString("\n") { it.description }
+    }
+
+    private fun buildCandidateQueries(candidate: OcrCardCandidate): List<CardQuery> {
+        val queries = mutableListOf<CardQuery>()
         val rawNumber = candidate.numberPrefix
+        val number = rawNumber?.padLocalId()
 
         for (language in listOf("de", "en")) {
-            if (number != null) urls += cardsUrl(language, "localId", number)
-            if (rawNumber != null && rawNumber != number) urls += cardsUrl(language, "localId", rawNumber)
-            candidate.possibleName?.takeIf { it.length >= 3 }?.let { name ->
-                urls += cardsUrl(language, "name", name)
+            if (number != null) queries += CardQuery(cardsUrl(language, "localId", number), "$language localId=$number")
+            if (rawNumber != null && rawNumber != number) queries += CardQuery(cardsUrl(language, "localId", rawNumber), "$language localId=$rawNumber")
+        }
+
+        if (queries.isEmpty()) {
+            for (language in listOf("de", "en")) {
+                candidate.possibleName?.takeIf { it.length >= 3 }?.let { name ->
+                    queries += CardQuery(cardsUrl(language, "name", name), "$language name=$name")
+                }
             }
         }
 
-        return urls.distinct()
+        return queries.distinctBy { it.url }
     }
 
     private fun cardsUrl(language: String, key: String, value: String): String {
@@ -67,8 +84,8 @@ class TcgdexCardMatcher(
             .toString()
     }
 
-    private fun fetchBriefCards(url: String): List<CardBrief> {
-        val request = Request.Builder().url(url).get().build()
+    private fun fetchBriefCards(query: CardQuery): List<CardBrief> {
+        val request = Request.Builder().url(query.url).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return emptyList()
             val array = JSONArray(response.body?.string().orEmpty())
@@ -77,13 +94,14 @@ class TcgdexCardMatcher(
                 CardBrief(
                     id = item.optString("id"),
                     name = item.optString("name"),
-                    image = item.optString("image").takeIf { it.isNotBlank() }
+                    image = item.optString("image").takeIf { it.isNotBlank() },
+                    queryUsed = query.description
                 )
             }
         }
     }
 
-    private fun fetchCardDetails(brief: CardBrief): CardDetails? {
+    private fun fetchCardDetails(brief: CardBrief): Pair<CardDetails, String>? {
         val language = languageFromImageUrl(brief.image) ?: "de"
         val request = Request.Builder()
             .url("$API_BASE/$language/cards/${brief.id}")
@@ -92,37 +110,71 @@ class TcgdexCardMatcher(
 
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return null
-            runCatching { TcgdexCardParser.parse(response.body?.string().orEmpty()) }.getOrNull()
+            runCatching { TcgdexCardParser.parse(response.body?.string().orEmpty()) to brief.queryUsed }.getOrNull()
         }
     }
 
-    private fun score(card: CardDetails, candidate: OcrCardCandidate): CardMatch {
+    private fun score(cardWithQuery: Pair<CardDetails, String>, candidate: OcrCardCandidate): CardMatch {
+        val (card, queryUsed) = cardWithQuery
         var score = 0
-        val cardNumber = card.number.trimStart('0').ifBlank { card.number }
-        val candidateNumber = candidate.numberPrefix
+        val reasons = mutableListOf<String>()
+        val cardNumber = card.normalizedNumber
+        val candidateNumber = candidate.numberPrefix?.normalizedCardNumber()
+        val nameScore = fuzzyNameScore(candidate.possibleName.orEmpty(), card.name)
 
-        if (candidateNumber != null && cardNumber == candidateNumber) score += 45
+        if (candidateNumber != null && cardNumber == candidateNumber) {
+            score += 55
+            reasons += "card number matched ${candidate.possibleNumber}"
+        }
 
         val officialTotal = card.setOfficialTotal?.trimStart('0')?.ifBlank { card.setOfficialTotal }
-        if (candidate.numberTotal != null && officialTotal == candidate.numberTotal) score += 25
+        if (candidate.numberTotal != null && officialTotal == candidate.numberTotal) {
+            score += 25
+            reasons += "set total matched ${candidate.numberTotal}"
+        } else if (candidate.numberTotal != null) {
+            score -= 25
+            reasons += "set total ${officialTotal ?: "unknown"} did not match ${candidate.numberTotal}"
+        }
 
-        val nameScore = fuzzyNameScore(candidate.possibleName.orEmpty(), card.name)
-        score += (nameScore * 30 / 100)
+        score += when {
+            nameScore == 100 -> 35
+            nameScore >= 90 -> 30
+            nameScore >= 80 -> 22
+            nameScore >= 70 -> 14
+            else -> 0
+        }
+        if (nameScore == 100) reasons += "exact Pokemon name matched"
+        else if (nameScore >= 70) reasons += "name fuzzy match $nameScore%"
+        else if (!candidate.possibleName.isNullOrBlank()) reasons += "name did not match ${candidate.possibleName}"
 
         if (candidateNumber != null && cardNumber != candidateNumber) {
-            score -= 30
+            score = 0
+            reasons += "rejected: card number ${card.number} did not match ${candidate.possibleNumber}"
+        } else if (!candidate.possibleName.isNullOrBlank() && nameScore < MIN_NAME_KEEP_SCORE) {
+            score = 0
+            reasons += "rejected: OCR name ${candidate.possibleName} did not match ${card.name}"
         }
 
         val confidence = score.coerceIn(0, 100)
+        val totalMatches = candidate.numberTotal == null || officialTotal == candidate.numberTotal
+        val nameIsStrong = candidate.possibleName.isNullOrBlank() || nameScore >= STRONG_NAME_SCORE
         return CardMatch(
             card = card,
             confidence = confidence,
             isStrong = confidence >= STRONG_MATCH_CONFIDENCE &&
-                candidateNumber != null &&
-                cardNumber == candidateNumber &&
-                (candidate.numberTotal == null || officialTotal == candidate.numberTotal)
+                (
+                    candidateNumber != null &&
+                        cardNumber == candidateNumber &&
+                        totalMatches &&
+                        nameIsStrong
+                ),
+            queryUsed = queryUsed,
+            matchReason = reasons.joinToString("; ").ifBlank { "low confidence fuzzy candidate" }
         )
     }
+
+    private val CardDetails.normalizedNumber: String
+        get() = number.normalizedCardNumber()
 
     private fun fuzzyNameScore(left: String, right: String): Int {
         val a = left.normalizedForMatch()
@@ -141,6 +193,20 @@ class TcgdexCardMatcher(
             .replace(Regex("\\p{Mn}+"), "")
             .lowercase(Locale.ROOT)
             .replace(Regex("[^a-z0-9]+"), "")
+    }
+
+    private fun String.normalizedCardNumber(): String {
+        val compact = uppercase(Locale.ROOT).replace(Regex("[^A-Z0-9]"), "")
+        return if (compact.all(Char::isDigit)) {
+            compact.trimStart('0').ifBlank { "0" }
+        } else {
+            compact.replace(Regex("""^([A-Z]+)0+(\d+)"""), "$1$2")
+        }
+    }
+
+    private fun String.padLocalId(): String {
+        val compact = uppercase(Locale.ROOT).replace(Regex("[^A-Z0-9]"), "")
+        return if (compact.all(Char::isDigit)) compact.padStart(3, '0') else compact
     }
 
     private fun levenshtein(left: String, right: String): Int {
@@ -168,13 +234,21 @@ class TcgdexCardMatcher(
     private data class CardBrief(
         val id: String,
         val name: String,
-        val image: String?
+        val image: String?,
+        val queryUsed: String
+    )
+
+    private data class CardQuery(
+        val url: String,
+        val description: String
     )
 
     private companion object {
         const val API_BASE = "https://api.tcgdex.net/v2"
         const val MAX_DETAIL_FETCH = 48
-        const val MIN_VISIBLE_CONFIDENCE = 35
-        const val STRONG_MATCH_CONFIDENCE = 85
+        const val MIN_VISIBLE_CONFIDENCE = 50
+        const val MIN_NAME_KEEP_SCORE = 70
+        const val STRONG_MATCH_CONFIDENCE = 80
+        const val STRONG_NAME_SCORE = 88
     }
 }
