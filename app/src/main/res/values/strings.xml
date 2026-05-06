@@ -22,6 +22,7 @@
     <string name="recognition_confidence">Recognition confidence</string>
     <string name="next_tcgdex_matching">OCR text is matched against TCGdex using card number and name.</string>
     <string name="match_set">Set</string>
+    <string name="match_rarity">Rarity</string>
     <string name="match_confidence">Confidence</string>
     <string name="label_condition">Condition</string>
     <string name="label_source">Pricing source</string>
@@ -30,6 +31,7 @@
     <string name="source_psa">PSA</string>
     <string name="source_pricecharting">PriceCharting</string>
     <string name="price_idle">Press Test Price to load the sample TCGdex card.</string>
+    <string name="price_waiting_match">Cardmarket prices will appear after a strong OCR match.</string>
     <string name="price_loading">Loading card price...</string>
     <string name="price_error">Could not load pricing data.</string>
     <string name="no_pricing_data">No pricing data found</string>
