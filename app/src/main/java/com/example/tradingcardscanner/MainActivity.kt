@@ -3,7 +3,6 @@ package com.example.tradingcardscanner
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -11,7 +10,6 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Spinner
@@ -21,9 +19,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import com.example.tradingcardscanner.data.CardImageAnalysis
 import com.example.tradingcardscanner.data.OcrCardCandidate
-import com.example.tradingcardscanner.data.PokemonCardImagePreprocessor
 import com.example.tradingcardscanner.data.PokemonOcrAnalyzer
 import com.example.tradingcardscanner.data.TcgdexCardMatcher
 import com.example.tradingcardscanner.data.TcgdexPricingSource
@@ -35,6 +31,7 @@ import com.example.tradingcardscanner.domain.PricingSnapshot
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
 import java.net.URL
@@ -52,15 +49,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var rawOcrTextView: TextView
     private lateinit var priceTextView: TextView
     private lateinit var testPriceButton: Button
-    private lateinit var debugOverlayToggle: CheckBox
-    private lateinit var debugOverlayView: DebugOverlayView
 
     private val pricingSource = TcgdexPricingSource()
     private val tcgdexCardMatcher = TcgdexCardMatcher()
     private val conditionPriceAdjuster = ConditionPriceAdjuster()
-    private val cardImagePreprocessor = PokemonCardImagePreprocessor()
     private val pokemonOcrAnalyzer = PokemonOcrAnalyzer()
-    private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private var textRecognizer: TextRecognizer? = null
     private var pendingPhotoUri: Uri? = null
 
     private val requestCameraPermission = registerForActivityResult(
@@ -80,7 +74,6 @@ class MainActivity : ComponentActivity() {
             pendingPhotoUri?.let { uri ->
                 cardImageView.setImageURI(uri)
                 imagePlaceholderText.visibility = View.GONE
-                debugOverlayView.setAnalysis(null)
                 runOcr(uri)
             }
         }
@@ -99,8 +92,13 @@ class MainActivity : ComponentActivity() {
         rawOcrTextView = findViewById(R.id.rawOcrTextView)
         priceTextView = findViewById(R.id.priceTextView)
         testPriceButton = findViewById(R.id.testPriceButton)
-        debugOverlayToggle = findViewById(R.id.debugOverlayToggle)
-        debugOverlayView = findViewById(R.id.debugOverlayView)
+
+        textRecognizer = runCatching {
+            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        }.getOrElse {
+            recognitionTextView.text = getString(R.string.ocr_init_failed)
+            null
+        }
 
         findViewById<Button>(R.id.scanButton).setOnClickListener {
             startCardCapture()
@@ -108,13 +106,10 @@ class MainActivity : ComponentActivity() {
         testPriceButton.setOnClickListener {
             loadTestPrice()
         }
-        debugOverlayToggle.setOnCheckedChangeListener { _, checked ->
-            debugOverlayView.visibility = if (checked) View.VISIBLE else View.GONE
-        }
     }
 
     override fun onDestroy() {
-        textRecognizer.close()
+        runCatching { textRecognizer?.close() }
         super.onDestroy()
     }
 
@@ -157,43 +152,29 @@ class MainActivity : ComponentActivity() {
         matchesContainer.removeAllViews()
         rawOcrTextView.text = getString(R.string.raw_ocr_title)
         priceTextView.text = getString(R.string.price_waiting_match)
-        debugOverlayView.setAnalysis(null)
 
-        runCatching {
-            val bitmap = decodeBitmap(imageUri)
-            val analysis = cardImagePreprocessor.prepare(bitmap)
-            cardImageView.setImageBitmap(analysis.croppedBitmap)
-            debugOverlayView.setAnalysis(analysis)
-            InputImage.fromBitmap(analysis.croppedBitmap, 0) to analysis
+        val recognizer = textRecognizer
+        if (recognizer == null) {
+            showOcrFailure(getString(R.string.ocr_init_failed))
+            return
         }
-            .onSuccess { (image, analysis) ->
-                textRecognizer.process(image)
-                    .addOnSuccessListener { text -> showOcrResult(text, analysis) }
+
+        runCatching { InputImage.fromFilePath(this, imageUri) }
+            .onSuccess { image ->
+                recognizer.process(image)
+                    .addOnSuccessListener { text -> showOcrResult(text) }
                     .addOnFailureListener { showOcrFailure() }
             }
             .onFailure { showOcrFailure() }
     }
 
-    private fun decodeBitmap(imageUri: Uri): Bitmap {
-        return contentResolver.openInputStream(imageUri)?.use { stream ->
-            BitmapFactory.decodeStream(stream)
-        } ?: error("Could not decode captured image")
-    }
-
-    private fun showOcrResult(text: Text, analysis: CardImageAnalysis) {
+    private fun showOcrResult(text: Text) {
         val rawText = text.text.trim()
-        val candidate = pokemonOcrAnalyzer.analyze(
-            text = text,
-            imageWidth = analysis.croppedBitmap.width,
-            imageHeight = analysis.croppedBitmap.height
-        )
+        val candidate = pokemonOcrAnalyzer.analyze(text)
 
         recognitionTextView.text = formatOcrCandidate(candidate)
         rawOcrTextView.text = buildString {
             appendLine(getString(R.string.raw_ocr_title))
-            appendLine("${getString(R.string.debug_crop)}: ${analysis.cardBoundsInOriginal.flattenToString()}${if (analysis.usedFallbackCrop) " (${getString(R.string.debug_fallback_crop)})" else ""}")
-            appendLine("${getString(R.string.debug_title_region)}: ${analysis.titleRegion.flattenToString()}")
-            appendLine("${getString(R.string.debug_number_region)}: ${analysis.numberRegion.flattenToString()}")
             candidate.debugNotes.forEach { appendLine(it) }
             appendLine()
             append(if (rawText.isBlank()) getString(R.string.value_unavailable) else rawText)
@@ -202,9 +183,9 @@ class MainActivity : ComponentActivity() {
         findTcgdexMatches(candidate)
     }
 
-    private fun showOcrFailure() {
+    private fun showOcrFailure(message: String = getString(R.string.ocr_failed)) {
         matchesContainer.removeAllViews()
-        recognitionTextView.text = getString(R.string.ocr_failed)
+        recognitionTextView.text = message
         rawOcrTextView.text = buildString {
             appendLine(getString(R.string.raw_ocr_title))
             appendLine()
