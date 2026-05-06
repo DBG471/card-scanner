@@ -17,11 +17,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.example.tradingcardscanner.data.OcrCardCandidate
+import com.example.tradingcardscanner.data.OcrCardCandidateExtractor
 import com.example.tradingcardscanner.data.TcgdexPricingSource
 import com.example.tradingcardscanner.domain.CardCondition
 import com.example.tradingcardscanner.domain.CardDetails
 import com.example.tradingcardscanner.domain.ConditionPriceAdjuster
 import com.example.tradingcardscanner.domain.PricingSnapshot
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
 import java.text.NumberFormat
 import java.util.Currency
@@ -32,11 +38,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var imagePlaceholderText: TextView
     private lateinit var conditionSpinner: Spinner
     private lateinit var sourceSpinner: Spinner
+    private lateinit var recognitionTextView: TextView
+    private lateinit var rawOcrTextView: TextView
     private lateinit var priceTextView: TextView
     private lateinit var testPriceButton: Button
 
     private val pricingSource = TcgdexPricingSource()
     private val conditionPriceAdjuster = ConditionPriceAdjuster()
+    private val ocrCandidateExtractor = OcrCardCandidateExtractor()
+    private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private var pendingPhotoUri: Uri? = null
 
     private val requestCameraPermission = registerForActivityResult(
@@ -56,6 +66,7 @@ class MainActivity : ComponentActivity() {
             pendingPhotoUri?.let { uri ->
                 cardImageView.setImageURI(uri)
                 imagePlaceholderText.visibility = View.GONE
+                runOcr(uri)
             }
         }
     }
@@ -68,6 +79,8 @@ class MainActivity : ComponentActivity() {
         imagePlaceholderText = findViewById(R.id.imagePlaceholderText)
         conditionSpinner = findViewById(R.id.conditionSpinner)
         sourceSpinner = findViewById(R.id.sourceSpinner)
+        recognitionTextView = findViewById(R.id.recognitionTextView)
+        rawOcrTextView = findViewById(R.id.rawOcrTextView)
         priceTextView = findViewById(R.id.priceTextView)
         testPriceButton = findViewById(R.id.testPriceButton)
 
@@ -77,6 +90,11 @@ class MainActivity : ComponentActivity() {
         testPriceButton.setOnClickListener {
             loadTestPrice()
         }
+    }
+
+    override fun onDestroy() {
+        textRecognizer.close()
+        super.onDestroy()
     }
 
     private fun startCardCapture() {
@@ -111,6 +129,57 @@ class MainActivity : ComponentActivity() {
     private fun isCameraIntentAvailable(): Boolean {
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         return intent.resolveActivity(packageManager) != null
+    }
+
+    private fun runOcr(imageUri: Uri) {
+        recognitionTextView.text = getString(R.string.ocr_running)
+        rawOcrTextView.text = getString(R.string.raw_ocr_title)
+
+        runCatching { InputImage.fromFilePath(this, imageUri) }
+            .onSuccess { image ->
+                textRecognizer.process(image)
+                    .addOnSuccessListener(::showOcrResult)
+                    .addOnFailureListener { showOcrFailure() }
+            }
+            .onFailure { showOcrFailure() }
+    }
+
+    private fun showOcrResult(text: Text) {
+        val rawText = text.text.trim()
+        val candidate = ocrCandidateExtractor.extract(rawText)
+
+        recognitionTextView.text = formatOcrCandidate(candidate)
+        rawOcrTextView.text = buildString {
+            appendLine(getString(R.string.raw_ocr_title))
+            appendLine()
+            append(if (rawText.isBlank()) getString(R.string.value_unavailable) else rawText)
+        }
+    }
+
+    private fun showOcrFailure() {
+        recognitionTextView.text = getString(R.string.ocr_failed)
+        rawOcrTextView.text = buildString {
+            appendLine(getString(R.string.raw_ocr_title))
+            appendLine()
+            append(getString(R.string.value_unavailable))
+        }
+    }
+
+    private fun formatOcrCandidate(candidate: OcrCardCandidate): String {
+        return buildString {
+            appendLine(getString(R.string.ocr_result_title))
+            appendLine()
+
+            if (!candidate.isReliable) {
+                appendLine(getString(R.string.card_not_recognized))
+            }
+
+            appendLine("${getString(R.string.possible_card_name)}: ${candidate.possibleName ?: getString(R.string.value_unavailable)}")
+            appendLine("${getString(R.string.possible_card_number)}: ${candidate.possibleNumber ?: getString(R.string.value_unavailable)}")
+            appendLine("${getString(R.string.recognition_confidence)}: ${candidate.confidenceScore}%")
+            appendLine()
+            append(getString(R.string.next_tcgdex_matching))
+        }
     }
 
     private fun loadTestPrice() {
