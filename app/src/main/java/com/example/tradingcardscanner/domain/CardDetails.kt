@@ -1,9 +1,12 @@
 package com.example.tradingcardscanner.domain
 
 data class CardDetails(
+    val id: String,
     val name: String,
     val setName: String,
     val number: String,
+    val setOfficialTotal: String?,
+    val imageUrl: String?,
     val pricing: PricingSnapshot?
 )
 
