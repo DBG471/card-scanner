@@ -11,6 +11,7 @@
     <string name="button_delete">Delete</string>
     <string name="button_search_again">Search again</string>
     <string name="button_select_card">Select correct card</string>
+    <string name="button_select_possible_matches">Select from possible matches</string>
     <string name="ocr_idle">Take a card photo to run OCR.</string>
     <string name="ocr_running">Running OCR...</string>
     <string name="ocr_failed">OCR failed. Please try another photo.</string>
