@@ -37,7 +37,10 @@ class TcgdexCardMatcher(
                             ?.let { match.card.normalizedNumber == it.normalizedCardNumber() }
                             ?: true
                         val nameMatches = candidate.possibleName
-                            ?.let { fuzzyNameScore(it, match.card.name) >= MIN_NAME_KEEP_SCORE }
+                            ?.let {
+                                fuzzyNameScore(it, match.card.name) >= MIN_NAME_KEEP_SCORE ||
+                                    candidate.numberPrefix != null
+                            }
                             ?: true
                         match.confidence >= MIN_VISIBLE_CONFIDENCE && numberMatches && nameMatches
                     }
@@ -63,11 +66,22 @@ class TcgdexCardMatcher(
         val rawNumber = candidate.numberPrefix
         val number = rawNumber?.padLocalId()
         val name = candidate.possibleName?.takeIf { it.length >= 3 }
+        val setName = candidate.possibleSetName?.takeIf { it.length >= 3 }
         val localIds = listOfNotNull(number, rawNumber).distinct()
 
         for (language in listOf("de", "en")) {
             for (localId in localIds) {
                 if (name != null) {
+                    if (setName != null) {
+                        queries += CardQuery(
+                            language = language,
+                            url = cardsUrl(
+                                language,
+                                mapOf("localId" to "eq:$localId", "name" to "like:$name", "set.name" to "like:$setName")
+                            ),
+                            description = "$language localId=eq:$localId name=like:$name set=like:$setName"
+                        )
+                    }
                     queries += CardQuery(
                         language = language,
                         url = cardsUrl(
@@ -160,6 +174,7 @@ class TcgdexCardMatcher(
         val cardNumber = card.normalizedNumber
         val candidateNumber = candidate.numberPrefix?.normalizedCardNumber()
         val nameScore = fuzzyNameScore(candidate.possibleName.orEmpty(), card.name)
+        val setScore = fuzzyNameScore(candidate.possibleSetName.orEmpty(), card.setName)
 
         if (candidateNumber != null && cardNumber == candidateNumber) {
             score += 65
@@ -186,10 +201,20 @@ class TcgdexCardMatcher(
         else if (nameScore >= 70) reasons += "name fuzzy match $nameScore%"
         else if (!candidate.possibleName.isNullOrBlank()) reasons += "name did not match ${candidate.possibleName}"
 
+        if (!candidate.possibleSetName.isNullOrBlank()) {
+            if (setScore >= 90) {
+                score += 12
+                reasons += "set matched ${candidate.possibleSetName}"
+            } else if (setScore >= 70) {
+                score += 6
+                reasons += "set fuzzy match $setScore%"
+            }
+        }
+
         if (candidateNumber != null && cardNumber != candidateNumber) {
             score = 0
             reasons += "rejected: card number ${card.number} did not match ${candidate.possibleNumber}"
-        } else if (!candidate.possibleName.isNullOrBlank() && nameScore < MIN_NAME_KEEP_SCORE) {
+        } else if (!candidate.possibleName.isNullOrBlank() && nameScore < MIN_NAME_KEEP_SCORE && candidateNumber == null) {
             score = 0
             reasons += "rejected: OCR name ${candidate.possibleName} did not match ${card.name}"
         }
