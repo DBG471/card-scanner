@@ -17,13 +17,16 @@ data class PricingSnapshot(
     val trend: Double?,
     val low: Double?,
     val average30Days: Double?,
-    val holo: HoloPricing?
+    val holo: VariantPricing?,
+    val reverseHolo: VariantPricing?
 ) {
     val hasAnyPrice: Boolean
-        get() = trend != null || low != null || average30Days != null || holo?.hasAnyPrice == true
+        get() = trend != null || low != null || average30Days != null ||
+            holo?.hasAnyPrice == true ||
+            reverseHolo?.hasAnyPrice == true
 }
 
-data class HoloPricing(
+data class VariantPricing(
     val average: Double?,
     val trend: Double?,
     val low: Double?,
