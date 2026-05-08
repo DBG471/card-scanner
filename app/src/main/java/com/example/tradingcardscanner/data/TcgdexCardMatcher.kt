@@ -371,7 +371,7 @@ class TcgdexCardMatcher(
         const val MAX_DETAIL_FETCH = 48
         const val MIN_VISIBLE_CONFIDENCE = 50
         const val MIN_NAME_KEEP_SCORE = 70
-        const val STRONG_MATCH_CONFIDENCE = 80
+        const val STRONG_MATCH_CONFIDENCE = 90
         const val STRONG_NAME_SCORE = 88
         const val STRONG_SET_SCORE = 90
     }
