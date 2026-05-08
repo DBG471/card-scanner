@@ -78,6 +78,7 @@
     <string name="holo_prices">Holo prices</string>
     <string name="camera_permission_needed">Camera permission is needed to scan a card.</string>
     <string name="camera_unavailable">No camera app is available.</string>
+    <string name="auto_crop_failed">Auto crop failed, using original image</string>
     <string name="source_coming_soon">Prepared for future support</string>
     <string-array name="condition_labels"><item>NM (Near Mint)</item><item>EX</item><item>GD</item><item>LP</item><item>Played</item><item>Poor</item></string-array>
     <string-array name="pricing_source_labels"><item>@string/source_cardmarket</item><item>@string/source_ebay</item><item>@string/source_psa</item><item>@string/source_pricecharting</item></string-array>
