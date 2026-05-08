@@ -30,7 +30,7 @@ class TcgdexCardMatcher(
                     .distinctBy { "${it.language}:${it.id}" }
                     .take(MAX_DETAIL_FETCH)
 
-                briefCards.mapNotNull(::fetchCardDetails)
+                val matches = briefCards.mapNotNull(::fetchCardDetails)
                     .map { card -> score(card, candidate) }
                     .filter { match ->
                         val numberMatches = candidate.numberPrefix
@@ -38,7 +38,7 @@ class TcgdexCardMatcher(
                             ?: true
                         val nameMatches = candidate.possibleName
                             ?.let {
-                                fuzzyNameScore(it, match.card.name) >= MIN_NAME_KEEP_SCORE ||
+                                fuzzyNameScore(it.basePokemonName(), match.card.name.basePokemonName()) >= MIN_NAME_KEEP_SCORE ||
                                     candidate.numberPrefix != null
                             }
                             ?: true
@@ -46,6 +46,7 @@ class TcgdexCardMatcher(
                     }
                     .sortedWith(compareByDescending<CardMatch> { it.confidence }.thenBy { it.card.name })
                     .take(3)
+                resolveAmbiguousStrongMatches(matches, candidate)
             }.onSuccess { matches ->
                 callback(Result.success(matches))
             }.onFailure { error ->
@@ -173,8 +174,19 @@ class TcgdexCardMatcher(
         val reasons = mutableListOf<String>()
         val cardNumber = card.normalizedNumber
         val candidateNumber = candidate.numberPrefix?.normalizedCardNumber()
-        val nameScore = fuzzyNameScore(candidate.possibleName.orEmpty(), card.name)
+        val candidateName = candidate.possibleName.orEmpty()
+        val candidateVariant = candidateName.variantSuffix()
+        val cardVariant = card.name.variantSuffix()
+        val candidateBaseName = candidateName.basePokemonName()
+        val cardBaseName = card.name.basePokemonName()
+        val nameScore = if (candidateVariant != null) {
+            fuzzyNameScore(candidateName, card.name)
+        } else {
+            fuzzyNameScore(candidateBaseName, cardBaseName)
+        }
         val setScore = fuzzyNameScore(candidate.possibleSetName.orEmpty(), card.setName)
+        val hasStrongSetClue = !candidate.possibleSetName.isNullOrBlank() && setScore >= STRONG_SET_SCORE
+        val variantIsAllowed = cardVariant == null || candidateVariant == cardVariant
 
         if (candidateNumber != null && cardNumber == candidateNumber) {
             score += 65
@@ -185,8 +197,14 @@ class TcgdexCardMatcher(
         if (candidate.numberTotal != null && officialTotal == candidate.numberTotal) {
             score += 25
             reasons += "set total matched ${candidate.numberTotal}"
+        } else if (candidate.numberTotal != null && hasStrongSetClue) {
+            score -= 8
+            reasons += "set total ${officialTotal ?: "unknown"} did not match ${candidate.numberTotal}, but set clue was strong"
+        } else if (candidate.numberTotal != null && officialTotal == null) {
+            score -= 18
+            reasons += "set total unknown; keeping as possible match only"
         } else if (candidate.numberTotal != null) {
-            score -= 25
+            score -= 45
             reasons += "set total ${officialTotal ?: "unknown"} did not match ${candidate.numberTotal}"
         }
 
@@ -202,7 +220,7 @@ class TcgdexCardMatcher(
         else if (!candidate.possibleName.isNullOrBlank()) reasons += "name did not match ${candidate.possibleName}"
 
         if (!candidate.possibleSetName.isNullOrBlank()) {
-            if (setScore >= 90) {
+            if (setScore >= STRONG_SET_SCORE) {
                 score += 12
                 reasons += "set matched ${candidate.possibleSetName}"
             } else if (setScore >= 70) {
@@ -214,32 +232,58 @@ class TcgdexCardMatcher(
         if (candidateNumber != null && cardNumber != candidateNumber) {
             score = 0
             reasons += "rejected: card number ${card.number} did not match ${candidate.possibleNumber}"
-        } else if (!candidate.possibleName.isNullOrBlank() && nameScore < MIN_NAME_KEEP_SCORE && candidateNumber == null) {
+        } else if (!variantIsAllowed) {
+            score = 0
+            reasons += "rejected: OCR name ${candidate.possibleName} did not include ${cardVariant?.uppercase(Locale.ROOT)} variant"
+        } else if (!candidate.possibleName.isNullOrBlank() && nameScore < MIN_NAME_KEEP_SCORE) {
             score = 0
             reasons += "rejected: OCR name ${candidate.possibleName} did not match ${card.name}"
         }
 
         val confidence = score.coerceIn(0, 100)
-        val totalMatches = candidate.numberTotal == null || officialTotal == candidate.numberTotal
+        val totalMatches = candidate.numberTotal == null || officialTotal == candidate.numberTotal || hasStrongSetClue
         val nameIsStrong = candidate.possibleName.isNullOrBlank() || nameScore >= STRONG_NAME_SCORE
+        val canAutoSelectNumber = candidate.numberTotal == null || officialTotal == candidate.numberTotal || hasStrongSetClue
         return CardMatch(
             card = card,
             confidence = confidence,
             isStrong = confidence >= STRONG_MATCH_CONFIDENCE &&
+                variantIsAllowed &&
+                canAutoSelectNumber &&
                 (
-                    candidateNumber != null &&
-                        cardNumber == candidateNumber &&
-                        totalMatches &&
-                        nameIsStrong
-                ) || (
-                    candidateNumber != null &&
-                        cardNumber == candidateNumber &&
-                        candidate.numberTotal == null &&
-                        nameScore == 100
+                    (
+                        candidateNumber != null &&
+                            cardNumber == candidateNumber &&
+                            totalMatches &&
+                            nameIsStrong
+                    ) || (
+                        candidateNumber != null &&
+                            cardNumber == candidateNumber &&
+                            candidate.numberTotal == null &&
+                            nameScore == 100
+                    )
                 ),
             queryUsed = queryUsed,
             matchReason = reasons.joinToString("; ").ifBlank { "low confidence fuzzy candidate" }
         )
+    }
+
+    private fun resolveAmbiguousStrongMatches(matches: List<CardMatch>, candidate: OcrCardCandidate): List<CardMatch> {
+        if (!candidate.possibleSetName.isNullOrBlank()) return matches
+        val candidateNumber = candidate.numberPrefix?.normalizedCardNumber() ?: return matches
+        val candidateName = candidate.possibleName?.basePokemonName()?.normalizedForMatch().orEmpty()
+        val sameBaseCandidates = matches.filter { match ->
+            match.card.normalizedNumber == candidateNumber &&
+                (candidateName.isBlank() || match.card.name.basePokemonName().normalizedForMatch() == candidateName)
+        }
+        if (sameBaseCandidates.size <= 1) return matches
+        return matches.map { match ->
+            if (sameBaseCandidates.any { it.card.id == match.card.id }) {
+                match.copy(isStrong = false, matchReason = "${match.matchReason}; possible ambiguity without set clue")
+            } else {
+                match
+            }
+        }
     }
 
     private val CardDetails.normalizedNumber: String
@@ -262,6 +306,17 @@ class TcgdexCardMatcher(
             .replace(Regex("\\p{Mn}+"), "")
             .lowercase(Locale.ROOT)
             .replace(Regex("[^a-z0-9]+"), "")
+    }
+
+    private fun String.basePokemonName(): String {
+        return replace(Regex("""(?i)[-\s]*(vmax|vstar|ex|gx|v)\b"""), "").trim()
+    }
+
+    private fun String.variantSuffix(): String? {
+        val normalized = lowercase(Locale.ROOT).trim()
+        return listOf("vmax", "vstar", "ex", "gx", "v").firstOrNull { suffix ->
+            normalized.contains(Regex("""(^|[-\s])${Regex.escape(suffix)}$"""))
+        }
     }
 
     private fun String.normalizedCardNumber(): String {
@@ -318,5 +373,6 @@ class TcgdexCardMatcher(
         const val MIN_NAME_KEEP_SCORE = 70
         const val STRONG_MATCH_CONFIDENCE = 80
         const val STRONG_NAME_SCORE = 88
+        const val STRONG_SET_SCORE = 90
     }
 }
