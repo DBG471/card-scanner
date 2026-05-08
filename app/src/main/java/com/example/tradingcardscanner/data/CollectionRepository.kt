@@ -48,6 +48,7 @@ class CollectionRepository(context: Context) {
             put("currencyCode", currencyCode)
             put("scanDate", scanDate)
             put("imageUrl", imageUrl)
+            put("localScanPhotoUri", localScanPhotoUri)
         }
     }
 
@@ -67,7 +68,8 @@ class CollectionRepository(context: Context) {
                 priceUsed = optNullableDouble("priceUsed"),
                 currencyCode = optString("currencyCode", "EUR"),
                 scanDate = optString("scanDate"),
-                imageUrl = optString("imageUrl").takeIf { it.isNotBlank() && it != "null" }
+                imageUrl = optString("imageUrl").takeIf { it.isNotBlank() && it != "null" },
+                localScanPhotoUri = optString("localScanPhotoUri").takeIf { it.isNotBlank() && it != "null" }
             )
         }.getOrNull()
     }
