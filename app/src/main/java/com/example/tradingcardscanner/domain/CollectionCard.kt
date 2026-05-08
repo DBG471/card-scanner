@@ -14,5 +14,6 @@ data class CollectionCard(
     val priceUsed: Double?,
     val currencyCode: String,
     val scanDate: String,
-    val imageUrl: String?
+    val imageUrl: String?,
+    val localScanPhotoUri: String?
 )
