@@ -1,9 +1,9 @@
 package com.example.tradingcardscanner.data
 
 import com.example.tradingcardscanner.domain.CardDetails
-import com.example.tradingcardscanner.domain.HoloPricing
 import com.example.tradingcardscanner.domain.PricingSnapshot
 import com.example.tradingcardscanner.domain.PricingSourceType
+import com.example.tradingcardscanner.domain.VariantPricing
 import org.json.JSONObject
 
 object TcgdexCardParser {
@@ -26,11 +26,17 @@ object TcgdexCardParser {
     }
 
     private fun parseCardmarketPricing(cardmarket: JSONObject): PricingSnapshot {
-        val holoPricing = HoloPricing(
+        val holoPricing = VariantPricing(
             average = cardmarket.optNullableDouble("avg-holo"),
             trend = cardmarket.optNullableDouble("trend-holo"),
             low = cardmarket.optNullableDouble("low-holo"),
             average30Days = cardmarket.optNullableDouble("avg30-holo")
+        ).takeIf { it.hasAnyPrice }
+        val reverseHoloPricing = VariantPricing(
+            average = cardmarket.optNullableDouble("avg-reverse"),
+            trend = cardmarket.optNullableDouble("trend-reverse"),
+            low = cardmarket.optNullableDouble("low-reverse"),
+            average30Days = cardmarket.optNullableDouble("avg30-reverse")
         ).takeIf { it.hasAnyPrice }
 
         return PricingSnapshot(
@@ -39,7 +45,8 @@ object TcgdexCardParser {
             trend = cardmarket.optNullableDouble("trend"),
             low = cardmarket.optNullableDouble("low"),
             average30Days = cardmarket.optNullableDouble("avg30"),
-            holo = holoPricing
+            holo = holoPricing,
+            reverseHolo = reverseHoloPricing
         )
     }
 
