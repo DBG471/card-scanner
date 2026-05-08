@@ -40,8 +40,11 @@ class CollectionRepository(context: Context) {
             put("cardNumber", cardNumber)
             put("rarity", rarity)
             put("condition", condition)
+            put("variant", variant)
             put("priceSource", priceSource)
             put("cardmarketTrendPrice", cardmarketTrendPrice)
+            put("matchedCardId", matchedCardId)
+            put("priceUsed", priceUsed)
             put("currencyCode", currencyCode)
             put("scanDate", scanDate)
             put("imageUrl", imageUrl)
@@ -57,8 +60,11 @@ class CollectionRepository(context: Context) {
                 cardNumber = optString("cardNumber"),
                 rarity = optString("rarity").takeIf { it.isNotBlank() && it != "null" },
                 condition = optString("condition"),
+                variant = optString("variant", "Normal"),
                 priceSource = optString("priceSource"),
                 cardmarketTrendPrice = optNullableDouble("cardmarketTrendPrice"),
+                matchedCardId = optString("matchedCardId"),
+                priceUsed = optNullableDouble("priceUsed"),
                 currencyCode = optString("currencyCode", "EUR"),
                 scanDate = optString("scanDate"),
                 imageUrl = optString("imageUrl").takeIf { it.isNotBlank() && it != "null" }
