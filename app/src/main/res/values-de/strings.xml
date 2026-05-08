@@ -9,6 +9,8 @@
     <string name="button_test_price">Testpreis</string>
     <string name="button_add_collection">Zur Sammlung hinzufuegen</string>
     <string name="button_delete">Loeschen</string>
+    <string name="button_search_again">Erneut suchen</string>
+    <string name="button_select_card">Richtige Karte auswaehlen</string>
     <string name="ocr_idle">Foto aufnehmen, um OCR zu starten.</string>
     <string name="ocr_running">OCR laeuft...</string>
     <string name="ocr_failed">OCR fehlgeschlagen. Bitte ein anderes Foto versuchen.</string>
@@ -26,6 +28,13 @@
     <string name="collection_scan_date">Scan-Datum</string>
     <string name="collection_condition">Zustand</string>
     <string name="collection_price_source">Preisquelle</string>
+    <string name="manual_correction">Manuelle Korrektur</string>
+    <string name="variant">Variante</string>
+    <string name="verify_older_cards">Bitte das Ergebnis bei alten oder hochwertigen Karten pruefen.</string>
+    <string name="normal_price">Normalpreis</string>
+    <string name="reverse_holo_prices">Reverse-Holo-Preise</string>
+    <string name="selected_variant_price">Preis der gewaehlten Variante</string>
+    <string name="no_variant_price">Kein Preis fuer diese Variante gefunden</string>
     <string name="card_not_recognized">Card could not be recognized</string>
     <string name="possible_matches_found">Possible matches found</string>
     <string name="no_reliable_match_found">No reliable match found</string>
@@ -68,18 +77,7 @@
     <string name="camera_permission_needed">Zum Scannen wird die Kameraberechtigung benoetigt.</string>
     <string name="camera_unavailable">Keine Kamera-App verfuegbar.</string>
     <string name="source_coming_soon">Fuer kuenftige Unterstuetzung vorbereitet</string>
-    <string-array name="condition_labels">
-        <item>NM (Near Mint)</item>
-        <item>EX</item>
-        <item>GD</item>
-        <item>LP</item>
-        <item>Played</item>
-        <item>Poor</item>
-    </string-array>
-    <string-array name="pricing_source_labels">
-        <item>@string/source_cardmarket</item>
-        <item>@string/source_ebay</item>
-        <item>@string/source_psa</item>
-        <item>@string/source_pricecharting</item>
-    </string-array>
+    <string-array name="condition_labels"><item>NM (Near Mint)</item><item>EX</item><item>GD</item><item>LP</item><item>Played</item><item>Poor</item></string-array>
+    <string-array name="pricing_source_labels"><item>@string/source_cardmarket</item><item>@string/source_ebay</item><item>@string/source_psa</item><item>@string/source_pricecharting</item></string-array>
+    <string-array name="variant_labels"><item>Normal</item><item>Holo</item><item>Reverse Holo</item><item>EX</item><item>GX</item><item>V</item><item>VMAX</item><item>VSTAR</item><item>Full Art</item><item>Secret Rare</item><item>Promo</item></string-array>
 </resources>
