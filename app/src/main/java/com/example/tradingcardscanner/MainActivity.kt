@@ -84,8 +84,11 @@ class MainActivity : ComponentActivity() {
     private var scanResult: CardMatch? = null
     private var testPriceResult: CardDetails? = null
     private var ocrDebugText = ""
+    private var cropDebugText = ""
     private var latestOcrCandidate: OcrCardCandidate? = null
     private var isOcrDebugExpanded = false
+
+    private data class CropResult(val uri: Uri, val method: String, val width: Int, val height: Int)
 
     private val requestCameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) openCamera() else Toast.makeText(this, R.string.camera_permission_needed, Toast.LENGTH_SHORT).show()
@@ -133,7 +136,7 @@ class MainActivity : ComponentActivity() {
         if (!isCameraIntentAvailable()) { Toast.makeText(this, R.string.camera_unavailable, Toast.LENGTH_SHORT).show(); return }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) openCamera() else requestCameraPermission.launch(Manifest.permission.CAMERA)
     }
-    private fun openCamera() { val uri = createPhotoUri(); pendingPhotoUri = uri; activeScanImageUri = null; takePicture.launch(uri) }
+    private fun openCamera() { val uri = createPhotoUri(); pendingPhotoUri = uri; activeScanImageUri = null; cropDebugText = ""; takePicture.launch(uri) }
     private fun createPhotoUri(): Uri {
         val dir = File(cacheDir, "camera_scans").apply { mkdirs() }
         val file = File.createTempFile("trading-card-", ".jpg", dir)
@@ -142,20 +145,20 @@ class MainActivity : ComponentActivity() {
     private fun isCameraIntentAvailable() = Intent(MediaStore.ACTION_IMAGE_CAPTURE).resolveActivity(packageManager) != null
 
     private fun handleCapturedImage(originalUri: Uri) {
-        val croppedUri = runCatching { cropCardImage(originalUri) }.getOrNull()
-        val imageUri = croppedUri ?: originalUri
+        val cropResult = runCatching { cropCardImage(originalUri) }.getOrNull()
+        val imageUri = cropResult?.uri ?: originalUri
         activeScanImageUri = imageUri
-        if (croppedUri == null) Toast.makeText(this, R.string.auto_crop_failed, Toast.LENGTH_SHORT).show()
+        cropDebugText = if (cropResult != null) "crop method used: ${cropResult.method}\ncrop size: ${cropResult.width}x${cropResult.height}" else "crop method used: original fallback\ncrop size: unavailable"
+        if (cropResult == null) Toast.makeText(this, R.string.auto_crop_failed, Toast.LENGTH_SHORT).show()
         cardImageView.setImageURI(imageUri)
         imagePlaceholderText.visibility = View.GONE
         runOcr(imageUri)
     }
 
-    private fun cropCardImage(originalUri: Uri): Uri? {
+    private fun cropCardImage(originalUri: Uri): CropResult? {
         val bitmap = decodeBitmap(originalUri, 2200) ?: return null
-        val rect = detectCardRect(bitmap) ?: return null
-        val cropped = runCatching { Bitmap.createBitmap(bitmap, rect.left, rect.top, rect.width(), rect.height()) }.getOrNull() ?: return null
-        return saveCroppedBitmap(cropped)
+        detectCardRect(bitmap)?.let { cropAndSave(bitmap, it, "edge detection")?.let { result -> return result } }
+        return cropAndSave(bitmap, centerCardRect(bitmap), "center fallback")
     }
 
     private fun decodeBitmap(uri: Uri, maxSize: Int): Bitmap? {
@@ -206,8 +209,29 @@ class MainActivity : ComponentActivity() {
         val height = bottom - top
         val areaRatio = (width * height).toFloat() / (bitmap.width * bitmap.height).toFloat()
         val aspectRatio = width.toFloat() / height.toFloat()
-        if (aspectRatio !in 0.50f..0.90f || areaRatio !in 0.18f..0.92f) return null
+        if (aspectRatio !in 0.50f..0.90f || areaRatio !in 0.18f..0.84f) return null
         return Rect(left, top, right, bottom)
+    }
+
+    private fun centerCardRect(bitmap: Bitmap): Rect {
+        val targetRatio = CARD_WIDTH_RATIO / CARD_HEIGHT_RATIO
+        var cropWidth = bitmap.width
+        var cropHeight = (cropWidth / targetRatio).roundToInt()
+        if (cropHeight > bitmap.height) {
+            cropHeight = bitmap.height
+            cropWidth = (cropHeight * targetRatio).roundToInt()
+        }
+        cropWidth = cropWidth.coerceIn(1, bitmap.width)
+        cropHeight = cropHeight.coerceIn(1, bitmap.height)
+        val left = ((bitmap.width - cropWidth) / 2).coerceAtLeast(0)
+        val top = ((bitmap.height - cropHeight) / 2).coerceAtLeast(0)
+        return Rect(left, top, left + cropWidth, top + cropHeight)
+    }
+
+    private fun cropAndSave(bitmap: Bitmap, rect: Rect, method: String): CropResult? {
+        val cropped = runCatching { Bitmap.createBitmap(bitmap, rect.left, rect.top, rect.width(), rect.height()) }.getOrNull() ?: return null
+        val uri = saveCroppedBitmap(cropped) ?: return null
+        return CropResult(uri, method, cropped.width, cropped.height)
     }
 
     private fun estimateBorderColor(bitmap: Bitmap): Int {
@@ -256,14 +280,14 @@ class MainActivity : ComponentActivity() {
         latestOcrCandidate = candidate
         populateManualCorrection(candidate)
         recognitionTextView.text = formatScanSummary(candidate, getString(R.string.matching_cards))
-        ocrDebugText = buildString { appendLine(getString(R.string.raw_ocr_title)); candidate.debugNotes.forEach { appendLine(it) }; appendLine(); append(if (rawText.isBlank()) getString(R.string.value_unavailable) else rawText) }
+        ocrDebugText = buildString { appendLine(cropDebugText.ifBlank { "crop method used: unavailable\ncrop size: unavailable" }); appendLine(); appendLine(getString(R.string.raw_ocr_title)); candidate.debugNotes.forEach { appendLine(it) }; appendLine(); append(if (rawText.isBlank()) getString(R.string.value_unavailable) else rawText) }
         ocrDebugButton.visibility = View.VISIBLE
         renderOcrDebug()
         findTcgdexMatches(candidate)
     }
     private fun showOcrFailure(message: String = getString(R.string.ocr_failed)) {
         scanResult = null; latestOcrCandidate = null; matchesContainer.removeAllViews(); recognitionTextView.text = message
-        ocrDebugText = buildString { appendLine(getString(R.string.raw_ocr_title)); appendLine(); append(getString(R.string.value_unavailable)) }
+        ocrDebugText = buildString { appendLine(cropDebugText.ifBlank { "crop method used: unavailable\ncrop size: unavailable" }); appendLine(); appendLine(getString(R.string.raw_ocr_title)); appendLine(); append(getString(R.string.value_unavailable)) }
         ocrDebugButton.visibility = View.VISIBLE; renderOcrDebug()
     }
     private fun populateManualCorrection(candidate: OcrCardCandidate) {
@@ -375,4 +399,9 @@ class MainActivity : ComponentActivity() {
     private fun View.withBottomMargin(): View { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, dp(10)) }; return this }
     private fun Button.withFixedHeight(height: Int): Button { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, height).apply { setMargins(0, 0, 0, dp(12)) }; return this }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    private companion object {
+        const val CARD_WIDTH_RATIO = 63f
+        const val CARD_HEIGHT_RATIO = 88f
+    }
 }
