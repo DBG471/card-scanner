@@ -10,6 +10,7 @@ data class OcrCardCandidate(
     val numberTotal: String?,
     val confidenceScore: Int,
     val cleanedQuery: String,
+    val possibleSetName: String? = null,
     val debugNotes: List<String> = emptyList()
 ) {
     val isReliable: Boolean
@@ -258,7 +259,7 @@ class PokemonOcrAnalyzer {
         const val LOOSE_TITLE_AREA_RATIO = 0.46f
         const val NUMBER_AREA_TOP_RATIO = 0.70f
         val cardNumberPattern = Regex("""\b(TG)?0*([A-Z]{0,3}\d{1,3})\s*/\s*0*(\d{1,3})\b""", RegexOption.IGNORE_CASE)
-        val promoPattern = Regex("""\bSVP\s*[0-9O]{1,3}\b""", RegexOption.IGNORE_CASE)
+        val promoPattern = Regex("""\b(SVP|TG|GG)\s*[0-9O]{1,3}\b""", RegexOption.IGNORE_CASE)
         val pokemonContextPattern = Regex("""\b(HP|Pokemon|Weakness|Resistance|Retreat|Stage|Basic)\b""", RegexOption.IGNORE_CASE)
         val germanPokemonContextPattern = Regex("""\b(KP|Schwaeche|Schwache|Resistenz|Rueckzug|Ruckzug|Entwickelt|Rang)\b""", RegexOption.IGNORE_CASE)
         val attackOrRulesPattern = Regex(
