@@ -3,7 +3,10 @@ package com.example.tradingcardscanner
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -39,12 +42,17 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
+import java.io.FileOutputStream
 import java.net.URL
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Currency
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private lateinit var cardImageView: ImageView
@@ -72,6 +80,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var collectionRepository: CollectionRepository
     private var textRecognizer: TextRecognizer? = null
     private var pendingPhotoUri: Uri? = null
+    private var activeScanImageUri: Uri? = null
     private var scanResult: CardMatch? = null
     private var testPriceResult: CardDetails? = null
     private var ocrDebugText = ""
@@ -82,11 +91,7 @@ class MainActivity : ComponentActivity() {
         if (granted) openCamera() else Toast.makeText(this, R.string.camera_permission_needed, Toast.LENGTH_SHORT).show()
     }
     private val takePicture = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success) pendingPhotoUri?.let { uri ->
-            cardImageView.setImageURI(uri)
-            imagePlaceholderText.visibility = View.GONE
-            runOcr(uri)
-        }
+        if (success) pendingPhotoUri?.let { handleCapturedImage(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,13 +133,111 @@ class MainActivity : ComponentActivity() {
         if (!isCameraIntentAvailable()) { Toast.makeText(this, R.string.camera_unavailable, Toast.LENGTH_SHORT).show(); return }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) openCamera() else requestCameraPermission.launch(Manifest.permission.CAMERA)
     }
-    private fun openCamera() { val uri = createPhotoUri(); pendingPhotoUri = uri; takePicture.launch(uri) }
+    private fun openCamera() { val uri = createPhotoUri(); pendingPhotoUri = uri; activeScanImageUri = null; takePicture.launch(uri) }
     private fun createPhotoUri(): Uri {
         val dir = File(cacheDir, "camera_scans").apply { mkdirs() }
         val file = File.createTempFile("trading-card-", ".jpg", dir)
         return FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
     }
     private fun isCameraIntentAvailable() = Intent(MediaStore.ACTION_IMAGE_CAPTURE).resolveActivity(packageManager) != null
+
+    private fun handleCapturedImage(originalUri: Uri) {
+        val croppedUri = runCatching { cropCardImage(originalUri) }.getOrNull()
+        val imageUri = croppedUri ?: originalUri
+        activeScanImageUri = imageUri
+        if (croppedUri == null) Toast.makeText(this, R.string.auto_crop_failed, Toast.LENGTH_SHORT).show()
+        cardImageView.setImageURI(imageUri)
+        imagePlaceholderText.visibility = View.GONE
+        runOcr(imageUri)
+    }
+
+    private fun cropCardImage(originalUri: Uri): Uri? {
+        val bitmap = decodeBitmap(originalUri, 2200) ?: return null
+        val rect = detectCardRect(bitmap) ?: return null
+        val cropped = runCatching { Bitmap.createBitmap(bitmap, rect.left, rect.top, rect.width(), rect.height()) }.getOrNull() ?: return null
+        return saveCroppedBitmap(cropped)
+    }
+
+    private fun decodeBitmap(uri: Uri, maxSize: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sampleSize = 1
+        while (bounds.outWidth / sampleSize > maxSize || bounds.outHeight / sampleSize > maxSize) sampleSize *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        return contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+    }
+
+    private fun detectCardRect(bitmap: Bitmap): Rect? {
+        val detectionBitmap = if (max(bitmap.width, bitmap.height) > 900) {
+            val scale = 900f / max(bitmap.width, bitmap.height).toFloat()
+            Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).roundToInt(), (bitmap.height * scale).roundToInt(), true)
+        } else bitmap
+        val borderColor = estimateBorderColor(detectionBitmap)
+        val step = max(2, max(detectionBitmap.width, detectionBitmap.height) / 350)
+        var minX = detectionBitmap.width
+        var minY = detectionBitmap.height
+        var maxX = 0
+        var maxY = 0
+        var hits = 0
+        val marginX = detectionBitmap.width / 25
+        val marginY = detectionBitmap.height / 25
+        var y = marginY
+        while (y < detectionBitmap.height - marginY) {
+            var x = marginX
+            while (x < detectionBitmap.width - marginX) {
+                if (isLikelyCardPixel(detectionBitmap.getPixel(x, y), borderColor)) {
+                    minX = min(minX, x); minY = min(minY, y); maxX = max(maxX, x); maxY = max(maxY, y); hits++
+                }
+                x += step
+            }
+            y += step
+        }
+        if (hits < 80 || minX >= maxX || minY >= maxY) return null
+        val padX = ((maxX - minX) * 0.035f).roundToInt()
+        val padY = ((maxY - minY) * 0.035f).roundToInt()
+        val scaleX = bitmap.width.toFloat() / detectionBitmap.width.toFloat()
+        val scaleY = bitmap.height.toFloat() / detectionBitmap.height.toFloat()
+        val left = ((minX - padX) * scaleX).roundToInt().coerceIn(0, bitmap.width - 2)
+        val top = ((minY - padY) * scaleY).roundToInt().coerceIn(0, bitmap.height - 2)
+        val right = ((maxX + padX) * scaleX).roundToInt().coerceIn(left + 1, bitmap.width)
+        val bottom = ((maxY + padY) * scaleY).roundToInt().coerceIn(top + 1, bitmap.height)
+        val width = right - left
+        val height = bottom - top
+        val areaRatio = (width * height).toFloat() / (bitmap.width * bitmap.height).toFloat()
+        val aspectRatio = width.toFloat() / height.toFloat()
+        if (aspectRatio !in 0.50f..0.90f || areaRatio !in 0.18f..0.92f) return null
+        return Rect(left, top, right, bottom)
+    }
+
+    private fun estimateBorderColor(bitmap: Bitmap): Int {
+        var red = 0L; var green = 0L; var blue = 0L; var count = 0L
+        val step = max(1, max(bitmap.width, bitmap.height) / 120)
+        fun sample(x: Int, y: Int) {
+            val color = bitmap.getPixel(x.coerceIn(0, bitmap.width - 1), y.coerceIn(0, bitmap.height - 1))
+            red += Color.red(color); green += Color.green(color); blue += Color.blue(color); count++
+        }
+        var x = 0
+        while (x < bitmap.width) { sample(x, 0); sample(x, bitmap.height - 1); x += step }
+        var y = 0
+        while (y < bitmap.height) { sample(0, y); sample(bitmap.width - 1, y); y += step }
+        if (count == 0L) return Color.BLACK
+        return Color.rgb((red / count).toInt(), (green / count).toInt(), (blue / count).toInt())
+    }
+
+    private fun isLikelyCardPixel(pixel: Int, borderColor: Int): Boolean {
+        val distance = abs(Color.red(pixel) - Color.red(borderColor)) + abs(Color.green(pixel) - Color.green(borderColor)) + abs(Color.blue(pixel) - Color.blue(borderColor))
+        val maxChannel = max(Color.red(pixel), max(Color.green(pixel), Color.blue(pixel)))
+        val minChannel = min(Color.red(pixel), min(Color.green(pixel), Color.blue(pixel)))
+        return distance > 70 || maxChannel - minChannel > 42
+    }
+
+    private fun saveCroppedBitmap(bitmap: Bitmap): Uri? {
+        val dir = File(filesDir, "collection_scans").apply { mkdirs() }
+        val file = File.createTempFile("trading-card-cropped-", ".jpg", dir)
+        FileOutputStream(file).use { output -> if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)) return null }
+        return FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+    }
 
     private fun runOcr(imageUri: Uri) {
         scanResult = null; testPriceResult = null; latestOcrCandidate = null; ocrDebugText = ""; isOcrDebugExpanded = false
@@ -213,7 +316,7 @@ class MainActivity : ComponentActivity() {
         val image = ImageView(this).apply { contentDescription = match.card.name; scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundResource(R.drawable.preview_frame) }
         row.addView(image, LinearLayout.LayoutParams(dp(86), dp(120)))
         row.addView(TextView(this).apply { text = buildString { appendLine(match.card.name); appendLine("${getString(R.string.match_set)}: ${match.card.setName}"); appendLine("${getString(R.string.match_rarity)}: ${match.card.rarity ?: getString(R.string.value_unavailable)}"); appendLine("${getString(R.string.card_number)}: ${match.card.number}/${match.card.setOfficialTotal ?: "?"}"); append("${getString(R.string.match_confidence)}: ${match.confidence}%") }; setTextColor((0xFF18313B).toInt()); textSize = 14f; setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        match.card.imageUrl?.let { loadCardImage(it, image) }
+        loadCardImage(match.card.imageUrl, image, activeScanImageUri?.toString() ?: pendingPhotoUri?.toString())
         return row.withBottomMargin()
     }
     private fun createCardDetailsView(card: CardDetails) = TextView(this).apply { setBackgroundResource(R.drawable.info_panel); setPadding(dp(12), dp(12), dp(12), dp(12)); setTextColor((0xFF18313B).toInt()); textSize = 15f; text = formatCardDetails(card) }.withBottomMargin()
@@ -226,16 +329,38 @@ class MainActivity : ComponentActivity() {
     private fun createAddToCollectionButton(match: CardMatch) = Button(this).apply { text = getString(R.string.button_add_collection); isAllCaps = false; setTextColor((0xFFFFFFFF).toInt()); setBackgroundResource(R.drawable.primary_button); setOnClickListener { collectionRepository.addCard(match.toCollectionCard()); renderCollection(); Toast.makeText(this@MainActivity, R.string.collection_added, Toast.LENGTH_SHORT).show() } }.withFixedHeight(dp(48))
     private fun CardMatch.toCollectionCard(): CollectionCard {
         val card = this.card; val pricing = card.pricing; val adjusted = pricing?.let { conditionPriceAdjuster.adjust(it, CardCondition.fromSpinnerPosition(conditionSpinner.selectedItemPosition)) }
-        return CollectionCard("${card.id}-${System.currentTimeMillis()}", card.name, card.setName, card.number, card.rarity, selectedConditionLabel(), selectedVariantLabel(), selectedPriceSourceLabel(), pricing?.trend, card.id, selectedVariantPrice(adjusted), pricing?.currencyCode ?: "EUR", DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, currentLocale()).format(Date()), card.imageUrl)
+        return CollectionCard("${card.id}-${System.currentTimeMillis()}", card.name, card.setName, card.number, card.rarity, selectedConditionLabel(), selectedVariantLabel(), selectedPriceSourceLabel(), pricing?.trend, card.id, selectedVariantPrice(adjusted), pricing?.currencyCode ?: "EUR", DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, currentLocale()).format(Date()), card.imageUrl, activeScanImageUri?.toString() ?: pendingPhotoUri?.toString())
     }
     private fun renderCollection() { collectionContainer.removeAllViews(); val cards = collectionRepository.getCards(); if (cards.isEmpty()) { collectionContainer.addView(TextView(this).apply { setBackgroundResource(R.drawable.info_panel); setPadding(dp(12), dp(12), dp(12), dp(12)); setTextColor((0xFF18313B).toInt()); textSize = 14f; text = getString(R.string.collection_empty) }); return }; cards.forEach { collectionContainer.addView(createCollectionCardView(it)) } }
     private fun createCollectionCardView(card: CollectionCard): View {
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundResource(R.drawable.info_panel); setPadding(dp(12), dp(12), dp(12), dp(12)) }
-        panel.addView(TextView(this).apply { setTextColor((0xFF18313B).toInt()); textSize = 14f; text = buildString { appendLine(card.cardName); appendLine("${getString(R.string.match_set)}: ${card.setName}"); appendLine("${getString(R.string.card_number)}: ${card.cardNumber}"); appendLine("${getString(R.string.match_rarity)}: ${card.rarity ?: getString(R.string.value_unavailable)}"); appendLine("${getString(R.string.collection_condition)}: ${card.condition}"); appendLine("${getString(R.string.variant)}: ${card.variant}"); appendLine("${getString(R.string.collection_price_source)}: ${card.priceSource}"); appendLine("${getString(R.string.selected_variant_price)}: ${formatPrice(card.priceUsed, card.currencyCode)}"); append("${getString(R.string.collection_scan_date)}: ${card.scanDate}") } })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val thumbnail = ImageView(this).apply { contentDescription = card.cardName; scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundResource(R.drawable.preview_frame) }
+        row.addView(thumbnail, LinearLayout.LayoutParams(dp(72), dp(100)))
+        row.addView(TextView(this).apply { setTextColor((0xFF18313B).toInt()); textSize = 14f; setPadding(dp(12), 0, 0, 0); text = buildString { appendLine(card.cardName); appendLine("${getString(R.string.match_set)}: ${card.setName}"); appendLine("${getString(R.string.card_number)}: ${card.cardNumber}"); appendLine("${getString(R.string.match_rarity)}: ${card.rarity ?: getString(R.string.value_unavailable)}"); appendLine("${getString(R.string.collection_condition)}: ${card.condition}"); appendLine("${getString(R.string.variant)}: ${card.variant}"); appendLine("${getString(R.string.collection_price_source)}: ${card.priceSource}"); appendLine("${getString(R.string.selected_variant_price)}: ${formatPrice(card.priceUsed, card.currencyCode)}"); append("${getString(R.string.collection_scan_date)}: ${card.scanDate}") } }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        panel.addView(row)
+        loadCollectionThumbnail(card, thumbnail)
         panel.addView(Button(this).apply { text = getString(R.string.button_delete); isAllCaps = false; setTextColor((0xFF164D61).toInt()); setBackgroundResource(R.drawable.secondary_button); setOnClickListener { collectionRepository.deleteCard(card.id); renderCollection(); Toast.makeText(this@MainActivity, R.string.collection_deleted, Toast.LENGTH_SHORT).show() } }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)))
         return panel.withBottomMargin()
     }
-    private fun loadCardImage(imageUrl: String, imageView: ImageView) { Thread { runCatching { val url = if (imageUrl.endsWith(".png")) imageUrl else "$imageUrl/high.png"; URL(url).openStream().use(BitmapFactory::decodeStream) }.onSuccess { bitmap -> runOnUiThread { imageView.setImageBitmap(bitmap) } } }.start() }
+    private fun loadCardImage(imageUrl: String?, imageView: ImageView, fallbackLocalUri: String? = null) {
+        if (imageUrl.isNullOrBlank()) { loadLocalImage(fallbackLocalUri, imageView); return }
+        Thread {
+            val bitmap = imageUrl.candidateImageUrls().firstNotNullOfOrNull { candidate -> runCatching { URL(candidate).openStream().use(BitmapFactory::decodeStream) }.getOrNull() }
+            runOnUiThread { if (bitmap != null) imageView.setImageBitmap(bitmap) else loadLocalImage(fallbackLocalUri, imageView) }
+        }.start()
+    }
+    private fun loadCollectionThumbnail(card: CollectionCard, imageView: ImageView) = loadCardImage(card.imageUrl, imageView, card.localScanPhotoUri)
+    private fun loadLocalImage(localImageUri: String?, imageView: ImageView) { if (!localImageUri.isNullOrBlank()) runCatching { imageView.setImageURI(Uri.parse(localImageUri)) } }
+    private fun String.candidateImageUrls(): List<String> {
+        val trimmed = trim().trimEnd('/')
+        if (trimmed.endsWith(".png", true) || trimmed.endsWith(".webp", true) || trimmed.endsWith(".jpg", true) || trimmed.endsWith(".jpeg", true)) {
+            val high = trimmed.replace("/low.png", "/high.png", true).replace("/low.webp", "/high.webp", true).replace("/low.jpg", "/high.jpg", true).replace("/low.jpeg", "/high.jpeg", true)
+            val low = trimmed.replace("/high.png", "/low.png", true).replace("/high.webp", "/low.webp", true).replace("/high.jpg", "/low.jpg", true).replace("/high.jpeg", "/low.jpeg", true)
+            return listOf(high, trimmed, low).distinct()
+        }
+        return listOf("$trimmed/high.png", "$trimmed/low.png")
+    }
     private fun loadTestPrice() { testPriceButton.isEnabled = false; priceTextView.text = getString(R.string.price_loading); pricingSource.fetchSampleCard { result -> runOnUiThread { testPriceButton.isEnabled = true; testPriceResult = result.getOrNull(); priceTextView.text = result.fold(onSuccess = { buildString { appendLine(getString(R.string.test_price_result)); appendLine(); append(formatCardDetails(it)) } }, onFailure = { getString(R.string.price_error) }) } } }
     private fun formatCardDetails(card: CardDetails): String { val adjusted = card.pricing?.let { conditionPriceAdjuster.adjust(it, CardCondition.fromSpinnerPosition(conditionSpinner.selectedItemPosition)) }; return buildString { appendLine("${getString(R.string.card_name)}: ${card.name}"); appendLine("${getString(R.string.set_name)}: ${card.setName}"); appendLine("${getString(R.string.match_rarity)}: ${card.rarity ?: getString(R.string.value_unavailable)}"); appendLine("${getString(R.string.card_number)}: ${card.number}"); appendLine(getString(R.string.verify_older_cards)); appendLine(); append(if (adjusted?.hasAnyPrice == true) formatPricing(adjusted) else getString(R.string.no_pricing_data)) } }
     private fun formatPricing(pricing: PricingSnapshot): String = buildString { appendLine("${getString(R.string.selected_variant_price)}: ${formatPrice(selectedVariantPrice(pricing), pricing.currencyCode)}"); if (selectedVariantPrice(pricing) == null) appendLine(getString(R.string.no_variant_price)); appendLine(); appendLine(getString(R.string.normal_price)); appendLine("${getString(R.string.trend_price)}: ${formatPrice(pricing.trend, pricing.currencyCode)}"); appendLine("${getString(R.string.low_price)}: ${formatPrice(pricing.low, pricing.currencyCode)}"); appendLine("${getString(R.string.avg30_price)}: ${formatPrice(pricing.average30Days, pricing.currencyCode)}"); pricing.holo?.takeIf { it.hasAnyPrice }?.let { appendLine(); appendLine(getString(R.string.holo_prices)); appendLine(formatVariantPricing(it, pricing.currencyCode)) }; pricing.reverseHolo?.takeIf { it.hasAnyPrice }?.let { appendLine(); appendLine(getString(R.string.reverse_holo_prices)); append(formatVariantPricing(it, pricing.currencyCode)) } }.trimEnd()
