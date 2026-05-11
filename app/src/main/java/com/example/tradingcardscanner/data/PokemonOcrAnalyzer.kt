@@ -8,6 +8,7 @@ data class OcrCardCandidate(
     val possibleNumber: String?,
     val numberPrefix: String?,
     val numberTotal: String?,
+    val possibleHp: Int?,
     val confidenceScore: Int,
     val cleanedQuery: String,
     val possibleSetName: String? = null,
@@ -30,8 +31,9 @@ class PokemonOcrAnalyzer {
 
         val regions = OcrRegions.from(imageWidth, imageHeight, lines)
         val cardNumber = findBestCardNumber(lines, regions)
+        val hp = findBestHp(lines, regions)
         val name = findBestName(lines, cardNumber, regions)
-        val score = confidenceFor(lines, name, cardNumber)
+        val score = confidenceFor(lines, name, cardNumber, hp)
         val cleanedQuery = buildCleanedQuery(name, cardNumber)
 
         return OcrCardCandidate(
@@ -39,9 +41,11 @@ class PokemonOcrAnalyzer {
             possibleNumber = cardNumber?.displayValue,
             numberPrefix = cardNumber?.prefix,
             numberTotal = cardNumber?.total,
+            possibleHp = hp,
             confidenceScore = score,
             cleanedQuery = cleanedQuery,
-            debugNotes = buildDebugNotes(regions, name, cardNumber, cleanedQuery)
+            possibleSetName = null,
+            debugNotes = buildDebugNotes(regions, name, cardNumber, hp, cleanedQuery)
         )
     }
 
@@ -58,6 +62,18 @@ class PokemonOcrAnalyzer {
             .flatMap { (line, rank) -> extractNumbers(line).map { it.copy(regionRank = rank) } }
             .filterNot { number -> number.isLikelyDamageNumber() }
             .sortedWith(compareBy<CardNumber> { it.regionRank }.thenByDescending { it.specificity })
+            .firstOrNull()
+    }
+
+    private fun findBestHp(lines: List<OcrLine>, regions: OcrRegions): Int? {
+        return lines.asSequence()
+            .filter { regions.isInTitle(it) }
+            .mapNotNull { line ->
+                hpPattern.find(line.text.normalizeCommonOcrNoise())?.let { match ->
+                    match.groupValues.drop(1).firstOrNull { it.isNotBlank() }?.toIntOrNull()
+                }
+            }
+            .filter { it in 10..400 }
             .firstOrNull()
     }
 
@@ -114,11 +130,13 @@ class PokemonOcrAnalyzer {
     private fun confidenceFor(
         lines: List<OcrLine>,
         possibleName: String?,
-        cardNumber: CardNumber?
+        cardNumber: CardNumber?,
+        hp: Int?
     ): Int {
         var score = 0
         if (cardNumber != null) score += 50
         if (possibleName != null) score += 25
+        if (hp != null) score += 8
         if (lines.any { pokemonContextPattern.containsMatchIn(it.text) }) score += 10
         if (lines.size >= 5) score += 5
         if (lines.any { germanPokemonContextPattern.containsMatchIn(it.text) }) score += 5
@@ -192,6 +210,7 @@ class PokemonOcrAnalyzer {
         regions: OcrRegions,
         name: String?,
         cardNumber: CardNumber?,
+        hp: Int?,
         cleanedQuery: String
     ): List<String> {
         return listOf(
@@ -199,6 +218,7 @@ class PokemonOcrAnalyzer {
             "number region: from ${regions.numberTop}px",
             "final parsed Pokemon name: ${name ?: "none"}",
             "final parsed card number: ${cardNumber?.displayValue ?: "none"}",
+            "final parsed HP: ${hp ?: "none"}",
             "cleaned TCGdex query: $cleanedQuery"
         )
     }
@@ -261,6 +281,7 @@ class PokemonOcrAnalyzer {
         val cardNumberPattern = Regex("""\b(TG)?0*([A-Z]{0,3}\d{1,3})\s*/\s*0*(\d{1,3})\b""", RegexOption.IGNORE_CASE)
         val promoPattern = Regex("""\b(SVP|TG|GG)\s*[0-9O]{1,3}\b""", RegexOption.IGNORE_CASE)
         val pokemonContextPattern = Regex("""\b(HP|Pokemon|Weakness|Resistance|Retreat|Stage|Basic)\b""", RegexOption.IGNORE_CASE)
+        val hpPattern = Regex("""(?i)\b(?:HP|KP|PS)?\s*(\d{2,3})\s*(?:HP|KP|PS)\b|\b(?:HP|KP|PS)\s*(\d{2,3})\b""")
         val germanPokemonContextPattern = Regex("""\b(KP|Schwaeche|Schwache|Resistenz|Rueckzug|Ruckzug|Entwickelt|Rang)\b""", RegexOption.IGNORE_CASE)
         val attackOrRulesPattern = Regex(
             """\b(ability|attack|damage|draw|discard|energy|evolves|angriff|faehigkeit|fahigkeit|schaden|lege|wirf|karten|energie|gegner|pokemon|basis|phasej|phase)\b""",
