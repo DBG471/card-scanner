@@ -24,6 +24,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.example.tradingcardscanner.data.CollectionRepository
+import com.example.tradingcardscanner.data.ImageSimilarityScorer
 import com.example.tradingcardscanner.data.OcrCardCandidate
 import com.example.tradingcardscanner.data.PokemonOcrAnalyzer
 import com.example.tradingcardscanner.data.TcgdexCardMatcher
@@ -75,6 +76,7 @@ class MainActivity : ComponentActivity() {
 
     private val pricingSource = TcgdexPricingSource()
     private val tcgdexCardMatcher = TcgdexCardMatcher()
+    private val imageSimilarityScorer by lazy { ImageSimilarityScorer(contentResolver) }
     private val conditionPriceAdjuster = ConditionPriceAdjuster()
     private val pokemonOcrAnalyzer = PokemonOcrAnalyzer()
     private lateinit var collectionRepository: CollectionRepository
@@ -324,7 +326,15 @@ class MainActivity : ComponentActivity() {
         if (candidate.possibleName == null && candidate.numberPrefix == null) { recognitionTextView.text = formatScanSummary(candidate, getString(R.string.no_reliable_match_found)); return }
         ocrDebugText = buildString { append(ocrDebugText); appendLine(); appendLine(); appendLine(getString(R.string.match_query)); append(tcgdexCardMatcher.debugQueries(candidate)) }
         renderOcrDebug()
-        tcgdexCardMatcher.findMatches(candidate) { result -> runOnUiThread { result.onSuccess(::showMatches).onFailure { showMatches(emptyList()) } } }
+        tcgdexCardMatcher.findMatches(candidate) { result ->
+            result
+                .onSuccess { matches ->
+                    imageSimilarityScorer.score(activeScanImageUri ?: pendingPhotoUri, matches) { scoredMatches ->
+                        runOnUiThread { showMatches(scoredMatches) }
+                    }
+                }
+                .onFailure { runOnUiThread { showMatches(emptyList()) } }
+        }
     }
     private fun showMatches(matches: List<CardMatch>) {
         matchesContainer.removeAllViews()
@@ -339,11 +349,12 @@ class MainActivity : ComponentActivity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(12), dp(12), dp(12), dp(12)); setBackgroundResource(R.drawable.info_panel) }
         val image = ImageView(this).apply { contentDescription = match.card.name; scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundResource(R.drawable.preview_frame) }
         row.addView(image, LinearLayout.LayoutParams(dp(86), dp(120)))
-        row.addView(TextView(this).apply { text = buildString { appendLine(match.card.name); appendLine("${getString(R.string.match_set)}: ${match.card.setName}"); appendLine("${getString(R.string.match_rarity)}: ${match.card.rarity ?: getString(R.string.value_unavailable)}"); appendLine("${getString(R.string.card_number)}: ${match.card.number}/${match.card.setOfficialTotal ?: "?"}"); append("${getString(R.string.match_confidence)}: ${match.confidence}%") }; setTextColor((0xFF18313B).toInt()); textSize = 14f; setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(TextView(this).apply { text = buildString { appendLine(match.card.name); appendLine("${getString(R.string.match_set)}: ${match.card.setName}"); appendLine("${getString(R.string.match_rarity)}: ${match.card.rarity ?: getString(R.string.value_unavailable)}"); appendLine("${getString(R.string.card_number)}: ${match.card.number}/${match.card.setOfficialTotal ?: "?"}"); appendLine("${getString(R.string.match_confidence)}: ${match.confidence}%"); append(match.scoreSummary()) }; setTextColor((0xFF18313B).toInt()); textSize = 14f; setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         loadCardImage(match.card.imageUrl, image, activeScanImageUri?.toString() ?: pendingPhotoUri?.toString())
         return row.withBottomMargin()
     }
     private fun createCardDetailsView(card: CardDetails) = TextView(this).apply { setBackgroundResource(R.drawable.info_panel); setPadding(dp(12), dp(12), dp(12), dp(12)); setTextColor((0xFF18313B).toInt()); textSize = 15f; text = formatCardDetails(card) }.withBottomMargin()
+    private fun CardMatch.scoreSummary(): String = buildString { append("number ${numberScore}%"); append(" | name ${nameScore}%"); if (setScore > 0) append(" | set ${setScore}%"); imageSimilarityScore?.let { append(" | image $it%") } }
     private fun createSelectableMatchView(match: CardMatch): View {
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundResource(R.drawable.info_panel); setPadding(dp(12), dp(12), dp(12), dp(12)) }
         panel.addView(createMatchView(match)); panel.addView(TextView(this).apply { setTextColor((0xFF18313B).toInt()); textSize = 13f; text = formatAvailablePriceSummary(match.card) })
