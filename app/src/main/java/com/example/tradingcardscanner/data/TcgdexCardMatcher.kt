@@ -190,6 +190,12 @@ class TcgdexCardMatcher(
             cardNumber == candidateNumber -> 100
             else -> 0
         }
+        val hpScore = when {
+            candidate.possibleHp == null || card.hp == null -> 0
+            candidate.possibleHp == card.hp -> 100
+            kotlin.math.abs(candidate.possibleHp - card.hp) <= 10 -> 72
+            else -> 0
+        }
         val hasStrongSetClue = !candidate.possibleSetName.isNullOrBlank() && setScore >= STRONG_SET_SCORE
         val variantIsAllowed = cardVariant == null || candidateVariant == cardVariant
 
@@ -234,6 +240,19 @@ class TcgdexCardMatcher(
             }
         }
 
+        if (candidate.possibleHp != null && card.hp != null) {
+            if (hpScore == 100) {
+                score += 8
+                reasons += "HP matched ${candidate.possibleHp}"
+            } else if (hpScore >= 70) {
+                score += 3
+                reasons += "HP close ${candidate.possibleHp}/${card.hp}"
+            } else {
+                score -= 6
+                reasons += "HP ${card.hp} did not match ${candidate.possibleHp}"
+            }
+        }
+
         if (candidateNumber != null && cardNumber != candidateNumber) {
             score = 0
             reasons += "rejected: card number ${card.number} did not match ${candidate.possibleNumber}"
@@ -272,7 +291,8 @@ class TcgdexCardMatcher(
             matchReason = reasons.joinToString("; ").ifBlank { "low confidence fuzzy candidate" },
             numberScore = numberScore,
             nameScore = nameScore,
-            setScore = setScore.takeIf { !candidate.possibleSetName.isNullOrBlank() } ?: 0
+            setScore = setScore.takeIf { !candidate.possibleSetName.isNullOrBlank() } ?: 0,
+            hpScore = hpScore
         )
     }
 
