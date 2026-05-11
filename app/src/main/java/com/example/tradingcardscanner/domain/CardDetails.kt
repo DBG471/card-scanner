@@ -7,6 +7,7 @@ data class CardDetails(
     val rarity: String?,
     val number: String,
     val setOfficialTotal: String?,
+    val hp: Int?,
     val imageUrl: String?,
     val pricing: PricingSnapshot?
 )
