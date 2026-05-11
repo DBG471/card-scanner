@@ -5,5 +5,9 @@ data class CardMatch(
     val confidence: Int,
     val isStrong: Boolean,
     val queryUsed: String,
-    val matchReason: String
+    val matchReason: String,
+    val numberScore: Int = 0,
+    val nameScore: Int = 0,
+    val setScore: Int = 0,
+    val imageSimilarityScore: Int? = null
 )
