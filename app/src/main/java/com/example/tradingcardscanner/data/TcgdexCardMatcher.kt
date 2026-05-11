@@ -45,7 +45,7 @@ class TcgdexCardMatcher(
                         match.confidence >= MIN_VISIBLE_CONFIDENCE && numberMatches && nameMatches
                     }
                     .sortedWith(compareByDescending<CardMatch> { it.confidence }.thenBy { it.card.name })
-                    .take(3)
+                    .take(MAX_VISIBLE_MATCHES)
                 resolveAmbiguousStrongMatches(matches, candidate)
             }.onSuccess { matches ->
                 callback(Result.success(matches))
@@ -185,6 +185,11 @@ class TcgdexCardMatcher(
             fuzzyNameScore(candidateBaseName, cardBaseName)
         }
         val setScore = fuzzyNameScore(candidate.possibleSetName.orEmpty(), card.setName)
+        val numberScore = when {
+            candidateNumber == null -> 0
+            cardNumber == candidateNumber -> 100
+            else -> 0
+        }
         val hasStrongSetClue = !candidate.possibleSetName.isNullOrBlank() && setScore >= STRONG_SET_SCORE
         val variantIsAllowed = cardVariant == null || candidateVariant == cardVariant
 
@@ -264,7 +269,10 @@ class TcgdexCardMatcher(
                     )
                 ),
             queryUsed = queryUsed,
-            matchReason = reasons.joinToString("; ").ifBlank { "low confidence fuzzy candidate" }
+            matchReason = reasons.joinToString("; ").ifBlank { "low confidence fuzzy candidate" },
+            numberScore = numberScore,
+            nameScore = nameScore,
+            setScore = setScore.takeIf { !candidate.possibleSetName.isNullOrBlank() } ?: 0
         )
     }
 
@@ -369,6 +377,7 @@ class TcgdexCardMatcher(
     private companion object {
         const val API_BASE = "https://api.tcgdex.net/v2"
         const val MAX_DETAIL_FETCH = 48
+        const val MAX_VISIBLE_MATCHES = 5
         const val MIN_VISIBLE_CONFIDENCE = 50
         const val MIN_NAME_KEEP_SCORE = 70
         const val STRONG_MATCH_CONFIDENCE = 90
