@@ -20,6 +20,7 @@ object TcgdexCardParser {
             rarity = root.optString("rarity").takeIf { it.isNotBlank() },
             number = root.optString("localId", ""),
             setOfficialTotal = cardCount?.optString("official")?.takeIf { it.isNotBlank() },
+            hp = root.optInt("hp").takeIf { it > 0 },
             imageUrl = root.optString("image")
                 .takeIf { it.isNotBlank() }
                 ?.let { image -> if (image.endsWith(".png", ignoreCase = true)) image else "${image.trimEnd('/')}/low.png" },
