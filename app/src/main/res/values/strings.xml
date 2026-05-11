@@ -23,6 +23,8 @@
     <string name="match_status">Match status</string>
     <string name="test_price_result">Test Price result</string>
     <string name="my_collection">My Collection</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_placeholder">Scanner settings, pricing sources, and export options will appear here.</string>
     <string name="collection_empty">No saved cards yet.</string>
     <string name="collection_added">Card added to collection.</string>
     <string name="collection_deleted">Card removed from collection.</string>
