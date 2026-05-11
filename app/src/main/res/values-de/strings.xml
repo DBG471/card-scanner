@@ -22,6 +22,8 @@
     <string name="match_status">Trefferstatus</string>
     <string name="test_price_result">Testpreis-Ergebnis</string>
     <string name="my_collection">Meine Sammlung</string>
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_placeholder">Scanner-Einstellungen, Preisquellen und Exportoptionen erscheinen hier.</string>
     <string name="collection_empty">Noch keine gespeicherten Karten.</string>
     <string name="collection_added">Karte wurde zur Sammlung hinzugefuegt.</string>
     <string name="collection_deleted">Karte wurde aus der Sammlung entfernt.</string>
