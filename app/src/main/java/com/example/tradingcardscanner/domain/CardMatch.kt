@@ -9,5 +9,6 @@ data class CardMatch(
     val numberScore: Int = 0,
     val nameScore: Int = 0,
     val setScore: Int = 0,
+    val hpScore: Int = 0,
     val imageSimilarityScore: Int? = null
 )
