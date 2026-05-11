@@ -1,0 +1,407 @@
+package com.example.tradingcardscanner.data
+
+import com.example.tradingcardscanner.domain.CardDetails
+import com.example.tradingcardscanner.domain.CardMatch
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import java.text.Normalizer
+import java.util.Locale
+import kotlin.math.max
+
+class TcgdexCardMatcher(
+    private val client: OkHttpClient = OkHttpClient()
+) {
+    fun findMatches(
+        candidate: OcrCardCandidate,
+        callback: (Result<List<CardMatch>>) -> Unit
+    ) {
+        val queries = buildCandidateQueries(candidate)
+        if (queries.isEmpty()) {
+            callback(Result.success(emptyList()))
+            return
+        }
+
+        Thread {
+            runCatching {
+                val briefCards = queries
+                    .flatMap { query -> fetchBriefCards(query) }
+                    .distinctBy { "${it.language}:${it.id}" }
+                    .take(MAX_DETAIL_FETCH)
+
+                val matches = briefCards.mapNotNull(::fetchCardDetails)
+                    .map { card -> score(card, candidate) }
+                    .filter { match ->
+                        val numberMatches = candidate.numberPrefix
+                            ?.let { match.card.normalizedNumber == it.normalizedCardNumber() }
+                            ?: true
+                        val nameMatches = candidate.possibleName
+                            ?.let {
+                                fuzzyNameScore(it.basePokemonName(), match.card.name.basePokemonName()) >= MIN_NAME_KEEP_SCORE ||
+                                    candidate.numberPrefix != null
+                            }
+                            ?: true
+                        match.confidence >= MIN_VISIBLE_CONFIDENCE && numberMatches && nameMatches
+                    }
+                    .sortedWith(compareByDescending<CardMatch> { it.confidence }.thenBy { it.card.name })
+                    .take(MAX_VISIBLE_MATCHES)
+                resolveAmbiguousStrongMatches(matches, candidate)
+            }.onSuccess { matches ->
+                callback(Result.success(matches))
+            }.onFailure { error ->
+                callback(Result.failure(error))
+            }
+        }.start()
+    }
+
+    fun debugQueries(candidate: OcrCardCandidate): String {
+        return buildString {
+            appendLine("cleaned OCR query=${candidate.cleanedQuery}")
+            append(buildCandidateQueries(candidate).joinToString("\n") { it.description })
+        }.trim()
+    }
+
+    private fun buildCandidateQueries(candidate: OcrCardCandidate): List<CardQuery> {
+        val queries = mutableListOf<CardQuery>()
+        val rawNumber = candidate.numberPrefix
+        val number = rawNumber?.padLocalId()
+        val name = candidate.possibleName?.takeIf { it.length >= 3 }
+        val setName = candidate.possibleSetName?.takeIf { it.length >= 3 }
+        val localIds = listOfNotNull(number, rawNumber).distinct()
+
+        for (language in listOf("de", "en")) {
+            for (localId in localIds) {
+                if (name != null) {
+                    if (setName != null) {
+                        queries += CardQuery(
+                            language = language,
+                            url = cardsUrl(
+                                language,
+                                mapOf("localId" to "eq:$localId", "name" to "like:$name", "set.name" to "like:$setName")
+                            ),
+                            description = "$language localId=eq:$localId name=like:$name set=like:$setName"
+                        )
+                    }
+                    queries += CardQuery(
+                        language = language,
+                        url = cardsUrl(
+                            language,
+                            mapOf("localId" to "eq:$localId", "name" to "like:$name")
+                        ),
+                        description = "$language localId=eq:$localId name=like:$name"
+                    )
+                    queries += CardQuery(
+                        language = language,
+                        url = cardsUrl(
+                            language,
+                            mapOf("localId" to localId, "name" to name)
+                        ),
+                        description = "$language localId=$localId name=$name"
+                    )
+                }
+                queries += CardQuery(
+                    language = language,
+                    url = cardsUrl(language, mapOf("localId" to "eq:$localId")),
+                    description = "$language localId=eq:$localId"
+                )
+                queries += CardQuery(
+                    language = language,
+                    url = cardsUrl(language, mapOf("localId" to localId)),
+                    description = "$language localId=$localId"
+                )
+            }
+        }
+
+        if (name != null) {
+            for (language in listOf("de", "en")) {
+                queries += CardQuery(
+                    language = language,
+                    url = cardsUrl(language, mapOf("name" to "eq:$name")),
+                    description = "$language name=eq:$name"
+                )
+                queries += CardQuery(
+                    language = language,
+                    url = cardsUrl(language, mapOf("name" to name)),
+                    description = "$language name=$name"
+                )
+            }
+        }
+
+        return queries.distinctBy { it.url }
+    }
+
+    private fun cardsUrl(language: String, filters: Map<String, String>): String {
+        val builder = "$API_BASE/$language/cards".toHttpUrl().newBuilder()
+        filters.forEach { (key, value) -> builder.addQueryParameter(key, value) }
+        return builder.build().toString()
+    }
+
+    private fun fetchBriefCards(query: CardQuery): List<CardBrief> {
+        val request = Request.Builder().url(query.url).get().build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return emptyList()
+            val array = JSONArray(response.body?.string().orEmpty())
+            return (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                CardBrief(
+                    id = item.optString("id"),
+                    localId = item.optString("localId"),
+                    name = item.optString("name"),
+                    image = item.optString("image").takeIf { it.isNotBlank() },
+                    language = query.language,
+                    queryUsed = query.description
+                )
+            }
+        }
+    }
+
+    private fun fetchCardDetails(brief: CardBrief): Pair<CardDetails, String>? {
+        val request = Request.Builder()
+            .url("$API_BASE/${brief.language}/cards/${brief.id}")
+            .get()
+            .build()
+
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            runCatching { TcgdexCardParser.parse(response.body?.string().orEmpty()) to brief.queryUsed }.getOrNull()
+        }
+    }
+
+    private fun score(cardWithQuery: Pair<CardDetails, String>, candidate: OcrCardCandidate): CardMatch {
+        val (card, queryUsed) = cardWithQuery
+        var score = 0
+        val reasons = mutableListOf<String>()
+        val cardNumber = card.normalizedNumber
+        val candidateNumber = candidate.numberPrefix?.normalizedCardNumber()
+        val candidateName = candidate.possibleName.orEmpty()
+        val candidateVariant = candidateName.variantSuffix()
+        val cardVariant = card.name.variantSuffix()
+        val candidateBaseName = candidateName.basePokemonName()
+        val cardBaseName = card.name.basePokemonName()
+        val nameScore = if (candidateVariant != null) {
+            fuzzyNameScore(candidateName, card.name)
+        } else {
+            fuzzyNameScore(candidateBaseName, cardBaseName)
+        }
+        val setScore = fuzzyNameScore(candidate.possibleSetName.orEmpty(), card.setName)
+        val numberScore = when {
+            candidateNumber == null -> 0
+            cardNumber == candidateNumber -> 100
+            else -> 0
+        }
+        val hpScore = when {
+            candidate.possibleHp == null || card.hp == null -> 0
+            candidate.possibleHp == card.hp -> 100
+            kotlin.math.abs(candidate.possibleHp - card.hp) <= 10 -> 72
+            else -> 0
+        }
+        val hasStrongSetClue = !candidate.possibleSetName.isNullOrBlank() && setScore >= STRONG_SET_SCORE
+        val variantIsAllowed = cardVariant == null || candidateVariant == cardVariant
+
+        if (candidateNumber != null && cardNumber == candidateNumber) {
+            score += 65
+            reasons += "card number matched ${candidate.possibleNumber}"
+        }
+
+        val officialTotal = card.setOfficialTotal?.trimStart('0')?.ifBlank { card.setOfficialTotal }
+        if (candidate.numberTotal != null && officialTotal == candidate.numberTotal) {
+            score += 25
+            reasons += "set total matched ${candidate.numberTotal}"
+        } else if (candidate.numberTotal != null && hasStrongSetClue) {
+            score -= 8
+            reasons += "set total ${officialTotal ?: "unknown"} did not match ${candidate.numberTotal}, but set clue was strong"
+        } else if (candidate.numberTotal != null && officialTotal == null) {
+            score -= 18
+            reasons += "set total unknown; keeping as possible match only"
+        } else if (candidate.numberTotal != null) {
+            score -= 45
+            reasons += "set total ${officialTotal ?: "unknown"} did not match ${candidate.numberTotal}"
+        }
+
+        score += when {
+            nameScore == 100 -> 35
+            nameScore >= 90 -> 32
+            nameScore >= 80 -> 24
+            nameScore >= 70 -> 14
+            else -> 0
+        }
+        if (nameScore == 100) reasons += "exact Pokemon name matched"
+        else if (nameScore >= 70) reasons += "name fuzzy match $nameScore%"
+        else if (!candidate.possibleName.isNullOrBlank()) reasons += "name did not match ${candidate.possibleName}"
+
+        if (!candidate.possibleSetName.isNullOrBlank()) {
+            if (setScore >= STRONG_SET_SCORE) {
+                score += 12
+                reasons += "set matched ${candidate.possibleSetName}"
+            } else if (setScore >= 70) {
+                score += 6
+                reasons += "set fuzzy match $setScore%"
+            }
+        }
+
+        if (candidate.possibleHp != null && card.hp != null) {
+            if (hpScore == 100) {
+                score += 8
+                reasons += "HP matched ${candidate.possibleHp}"
+            } else if (hpScore >= 70) {
+                score += 3
+                reasons += "HP close ${candidate.possibleHp}/${card.hp}"
+            } else {
+                score -= 6
+                reasons += "HP ${card.hp} did not match ${candidate.possibleHp}"
+            }
+        }
+
+        if (candidateNumber != null && cardNumber != candidateNumber) {
+            score = 0
+            reasons += "rejected: card number ${card.number} did not match ${candidate.possibleNumber}"
+        } else if (!variantIsAllowed) {
+            score = 0
+            reasons += "rejected: OCR name ${candidate.possibleName} did not include ${cardVariant?.uppercase(Locale.ROOT)} variant"
+        } else if (!candidate.possibleName.isNullOrBlank() && nameScore < MIN_NAME_KEEP_SCORE) {
+            score = 0
+            reasons += "rejected: OCR name ${candidate.possibleName} did not match ${card.name}"
+        }
+
+        val confidence = score.coerceIn(0, 100)
+        val totalMatches = candidate.numberTotal == null || officialTotal == candidate.numberTotal || hasStrongSetClue
+        val nameIsStrong = candidate.possibleName.isNullOrBlank() || nameScore >= STRONG_NAME_SCORE
+        val canAutoSelectNumber = candidate.numberTotal == null || officialTotal == candidate.numberTotal || hasStrongSetClue
+        return CardMatch(
+            card = card,
+            confidence = confidence,
+            isStrong = confidence >= STRONG_MATCH_CONFIDENCE &&
+                variantIsAllowed &&
+                canAutoSelectNumber &&
+                (
+                    (
+                        candidateNumber != null &&
+                            cardNumber == candidateNumber &&
+                            totalMatches &&
+                            nameIsStrong
+                    ) || (
+                        candidateNumber != null &&
+                            cardNumber == candidateNumber &&
+                            candidate.numberTotal == null &&
+                            nameScore == 100
+                    )
+                ),
+            queryUsed = queryUsed,
+            matchReason = reasons.joinToString("; ").ifBlank { "low confidence fuzzy candidate" },
+            numberScore = numberScore,
+            nameScore = nameScore,
+            setScore = setScore.takeIf { !candidate.possibleSetName.isNullOrBlank() } ?: 0,
+            hpScore = hpScore
+        )
+    }
+
+    private fun resolveAmbiguousStrongMatches(matches: List<CardMatch>, candidate: OcrCardCandidate): List<CardMatch> {
+        if (!candidate.possibleSetName.isNullOrBlank()) return matches
+        val candidateNumber = candidate.numberPrefix?.normalizedCardNumber() ?: return matches
+        val candidateName = candidate.possibleName?.basePokemonName()?.normalizedForMatch().orEmpty()
+        val sameBaseCandidates = matches.filter { match ->
+            match.card.normalizedNumber == candidateNumber &&
+                (candidateName.isBlank() || match.card.name.basePokemonName().normalizedForMatch() == candidateName)
+        }
+        if (sameBaseCandidates.size <= 1) return matches
+        return matches.map { match ->
+            if (sameBaseCandidates.any { it.card.id == match.card.id }) {
+                match.copy(isStrong = false, matchReason = "${match.matchReason}; possible ambiguity without set clue")
+            } else {
+                match
+            }
+        }
+    }
+
+    private val CardDetails.normalizedNumber: String
+        get() = number.normalizedCardNumber()
+
+    private fun fuzzyNameScore(left: String, right: String): Int {
+        val a = left.normalizedForMatch()
+        val b = right.normalizedForMatch()
+        if (a.isBlank() || b.isBlank()) return 0
+        if (a == b) return 100
+        if (a.contains(b) || b.contains(a)) return 82
+
+        val distance = levenshtein(a, b)
+        val maxLength = max(a.length, b.length)
+        return ((1.0 - distance.toDouble() / maxLength) * 100).toInt().coerceIn(0, 100)
+    }
+
+    private fun String.normalizedForMatch(): String {
+        return Normalizer.normalize(this, Normalizer.Form.NFD)
+            .replace(Regex("\\p{Mn}+"), "")
+            .lowercase(Locale.ROOT)
+            .replace(Regex("[^a-z0-9]+"), "")
+    }
+
+    private fun String.basePokemonName(): String {
+        return replace(Regex("""(?i)[-\s]*(vmax|vstar|ex|gx|v)\b"""), "").trim()
+    }
+
+    private fun String.variantSuffix(): String? {
+        val normalized = lowercase(Locale.ROOT).trim()
+        return listOf("vmax", "vstar", "ex", "gx", "v").firstOrNull { suffix ->
+            normalized.contains(Regex("""(^|[-\s])${Regex.escape(suffix)}$"""))
+        }
+    }
+
+    private fun String.normalizedCardNumber(): String {
+        val compact = uppercase(Locale.ROOT).replace(Regex("[^A-Z0-9]"), "")
+        return if (compact.all(Char::isDigit)) {
+            compact.trimStart('0').ifBlank { "0" }
+        } else {
+            compact.replace(Regex("""^([A-Z]+)0+(\d+)"""), "$1$2")
+        }
+    }
+
+    private fun String.padLocalId(): String {
+        val compact = uppercase(Locale.ROOT).replace(Regex("[^A-Z0-9]"), "")
+        return if (compact.all(Char::isDigit)) compact.padStart(3, '0') else compact
+    }
+
+    private fun levenshtein(left: String, right: String): Int {
+        val costs = IntArray(right.length + 1) { it }
+        for (i in 1..left.length) {
+            var previous = costs[0]
+            costs[0] = i
+            for (j in 1..right.length) {
+                val current = costs[j]
+                costs[j] = minOf(
+                    costs[j] + 1,
+                    costs[j - 1] + 1,
+                    previous + if (left[i - 1] == right[j - 1]) 0 else 1
+                )
+                previous = current
+            }
+        }
+        return costs[right.length]
+    }
+
+    private data class CardBrief(
+        val id: String,
+        val localId: String,
+        val name: String,
+        val image: String?,
+        val language: String,
+        val queryUsed: String
+    )
+
+    private data class CardQuery(
+        val language: String,
+        val url: String,
+        val description: String
+    )
+
+    private companion object {
+        const val API_BASE = "https://api.tcgdex.net/v2"
+        const val MAX_DETAIL_FETCH = 48
+        const val MAX_VISIBLE_MATCHES = 5
+        const val MIN_VISIBLE_CONFIDENCE = 50
+        const val MIN_NAME_KEEP_SCORE = 70
+        const val STRONG_MATCH_CONFIDENCE = 90
+        const val STRONG_NAME_SCORE = 88
+        const val STRONG_SET_SCORE = 90
+    }
+}

@@ -3,4 +3,7 @@
     <cache-path
         name="camera_scans"
         path="camera_scans/" />
+    <files-path
+        name="collection_scans"
+        path="collection_scans/" />
 </paths>

@@ -16,6 +16,14 @@ class ConditionPriceAdjuster {
                     low = it.low?.times(multiplier),
                     average30Days = it.average30Days?.times(multiplier)
                 )
+            },
+            reverseHolo = pricing.reverseHolo?.let {
+                it.copy(
+                    average = it.average?.times(multiplier),
+                    trend = it.trend?.times(multiplier),
+                    low = it.low?.times(multiplier),
+                    average30Days = it.average30Days?.times(multiplier)
+                )
             }
         )
     }

@@ -7,6 +7,57 @@
     <string name="image_placeholder">Noch kein Kartenbild aufgenommen</string>
     <string name="button_scan">Karte scannen</string>
     <string name="button_test_price">Testpreis</string>
+    <string name="button_add_collection">Zur Sammlung hinzufuegen</string>
+    <string name="button_delete">Loeschen</string>
+    <string name="button_search_again">Erneut suchen</string>
+    <string name="button_select_card">Richtige Karte auswaehlen</string>
+    <string name="ocr_idle">Foto aufnehmen, um OCR zu starten.</string>
+    <string name="ocr_running">OCR laeuft...</string>
+    <string name="ocr_failed">OCR fehlgeschlagen. Bitte ein anderes Foto versuchen.</string>
+    <string name="ocr_init_failed">OCR ist auf diesem Geraet nicht verfuegbar. Die App kann trotzdem starten und Testpreis bleibt verfuegbar.</string>
+    <string name="ocr_result_title">OCR-Erkennung</string>
+    <string name="raw_ocr_title">OCR-Rohtext</string>
+    <string name="show_ocr_debug">OCR-Debug anzeigen</string>
+    <string name="hide_ocr_debug">OCR-Debug ausblenden</string>
+    <string name="match_status">Trefferstatus</string>
+    <string name="test_price_result">Testpreis-Ergebnis</string>
+    <string name="my_collection">Meine Sammlung</string>
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_placeholder">Scanner-Einstellungen, Preisquellen und Exportoptionen erscheinen hier.</string>
+    <string name="collection_empty">Noch keine gespeicherten Karten.</string>
+    <string name="collection_added">Karte wurde zur Sammlung hinzugefuegt.</string>
+    <string name="collection_deleted">Karte wurde aus der Sammlung entfernt.</string>
+    <string name="collection_scan_date">Scan-Datum</string>
+    <string name="collection_condition">Zustand</string>
+    <string name="collection_price_source">Preisquelle</string>
+    <string name="manual_correction">Manuelle Korrektur</string>
+    <string name="variant">Variante</string>
+    <string name="verify_older_cards">Bitte das Ergebnis bei alten oder hochwertigen Karten pruefen.</string>
+    <string name="normal_price">Normalpreis</string>
+    <string name="reverse_holo_prices">Reverse-Holo-Preise</string>
+    <string name="selected_variant_price">Preis der gewaehlten Variante</string>
+    <string name="no_variant_price">Kein Preis fuer diese Variante gefunden</string>
+    <string name="card_not_recognized">Card could not be recognized</string>
+    <string name="possible_matches_found">Possible matches found</string>
+    <string name="no_reliable_match_found">No reliable match found</string>
+    <string name="strong_match_found">Starker Treffer gefunden</string>
+    <string name="no_possible_matches">Keine moeglichen Treffer gefunden</string>
+    <string name="matching_cards">Abgleich mit TCGdex...</string>
+    <string name="possible_card_name">Moeglicher Kartenname</string>
+    <string name="possible_card_number">Moegliche Kartennummer</string>
+    <string name="cleaned_ocr_query">Bereinigte OCR-Abfrage</string>
+    <string name="recognition_confidence">Erkennungs-Konfidenz</string>
+    <string name="next_tcgdex_matching">OCR-Text wird mit Kartennummer und Name gegen TCGdex abgeglichen.</string>
+    <string name="match_set">Set</string>
+    <string name="match_rarity">Seltenheit</string>
+    <string name="match_confidence">Konfidenz</string>
+    <string name="match_reason">Grund</string>
+    <string name="match_query">TCGdex-Abfrage</string>
+    <string name="debug_overlay">OCR-Regions-Overlay anzeigen</string>
+    <string name="debug_crop">Erkannter Kartenausschnitt</string>
+    <string name="debug_fallback_crop">Fallback-Ausschnitt</string>
+    <string name="debug_title_region">Titel-OCR-Region</string>
+    <string name="debug_number_region">Nummern-OCR-Region</string>
     <string name="label_condition">Zustand</string>
     <string name="label_source">Preisquelle</string>
     <string name="source_cardmarket">Cardmarket</string>
@@ -27,19 +78,9 @@
     <string name="holo_prices">Holo-Preise</string>
     <string name="camera_permission_needed">Zum Scannen wird die Kameraberechtigung benoetigt.</string>
     <string name="camera_unavailable">Keine Kamera-App verfuegbar.</string>
+    <string name="auto_crop_failed">Auto crop failed, using original image</string>
     <string name="source_coming_soon">Fuer kuenftige Unterstuetzung vorbereitet</string>
-    <string-array name="condition_labels">
-        <item>NM (Near Mint)</item>
-        <item>EX</item>
-        <item>GD</item>
-        <item>LP</item>
-        <item>Played</item>
-        <item>Poor</item>
-    </string-array>
-    <string-array name="pricing_source_labels">
-        <item>@string/source_cardmarket</item>
-        <item>@string/source_ebay</item>
-        <item>@string/source_psa</item>
-        <item>@string/source_pricecharting</item>
-    </string-array>
+    <string-array name="condition_labels"><item>NM (Near Mint)</item><item>EX</item><item>GD</item><item>LP</item><item>Played</item><item>Poor</item></string-array>
+    <string-array name="pricing_source_labels"><item>@string/source_cardmarket</item><item>@string/source_ebay</item><item>@string/source_psa</item><item>@string/source_pricecharting</item></string-array>
+    <string-array name="variant_labels"><item>Normal</item><item>Holo</item><item>Reverse Holo</item><item>EX</item><item>GX</item><item>V</item><item>VMAX</item><item>VSTAR</item><item>Full Art</item><item>Secret Rare</item><item>Promo</item></string-array>
 </resources>
